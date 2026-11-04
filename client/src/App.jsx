@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import useSmartEnter from './useSmartEnter';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Activity, ArrowLeft, ArrowRight, CalendarDays, CheckCircle2, Clock3, Eye, EyeOff,
@@ -17,8 +18,6 @@ import './App.css';
 /* Leaflet, react-leaflet and the map UI live in their own module so the initial
  * bundle stays small; the chunk is requested only when the hospital map renders. */
 const HospitalMap = lazy(() => import('./components/HospitalMap'));
-
-const DISCLAIMER = 'CareBridge provides general healthcare-support information only. It does not provide a medical diagnosis and is not a replacement for a qualified healthcare professional. In a medical emergency, contact local emergency services immediately.';
 
 /* A bridge arch carrying a medical cross: one mark, used at every size. */
 function BrandMark({ size = 17 }) {
@@ -73,9 +72,10 @@ const doctorIdentifier = (doctor) => {
 const doctorName = (doctor) => doctor?.name || doctor?.user?.name || 'Doctor';
 const initials = (name) => String(name || 'D').replace(/^Dr\.?\s+/i, '').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'D';
 const todayISO = () => new Date().toISOString().slice(0, 10);
-const formatDate = (date) => (date ? new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '—');
-const formatShortDate = (date) => (date ? new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '—');
-const formatMonthYear = (value) => (value ? new Date(value).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : '—');
+const dateLocale = (lang) => (lang === 'ta' ? 'ta-IN' : 'en-IN');
+const formatDate = (date, lang = 'en') => (date ? new Date(`${date}T12:00:00`).toLocaleDateString(dateLocale(lang), { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+const formatShortDate = (date, lang = 'en') => (date ? new Date(`${date}T12:00:00`).toLocaleDateString(dateLocale(lang), { day: 'numeric', month: 'short' }) : '—');
+const formatMonthYear = (value, lang = 'en') => (value ? new Date(value).toLocaleDateString(dateLocale(lang), { month: 'long', year: 'numeric' }) : '—');
 const cleanParams = (values) => Object.fromEntries(Object.entries(values).filter(([, value]) => String(value || '').trim() !== ''));
 const safeRedirect = (account, location) => {
   const requested = location.state?.from;
@@ -123,11 +123,13 @@ function SectionHeader({ title, description, action, id }) {
 }
 SectionHeader.propTypes = { title: PropTypes.string.isRequired, description: PropTypes.string, action: PropTypes.node, id: PropTypes.string };
 
-function Field({ label, value, onChange, type = 'text', placeholder = '', required = false, disabled = false, min, hint, as = 'input', autoComplete }) {
-  const id = useId();
+function Field({ label, value, onChange, type = 'text', placeholder = '', required = false, disabled = false, min, hint, error, id: idProp, as = 'input', autoComplete }) {
+  const generatedId = useId();
+  const id = idProp || generatedId;
   const Component = as;
+  const describedBy = [hint && `${id}-hint`, error && `${id}-error`].filter(Boolean).join(' ') || undefined;
   return (
-    <div className={`field${disabled ? ' is-disabled' : ''}`}>
+    <div className={`field${disabled ? ' is-disabled' : ''}${error ? ' has-error' : ''}`}>
       <label htmlFor={id}>
         {label}
         {required && <span className="required-mark" aria-hidden="true">*</span>}
@@ -142,9 +144,11 @@ function Field({ label, value, onChange, type = 'text', placeholder = '', requir
         disabled={disabled}
         min={min}
         autoComplete={autoComplete}
-        aria-describedby={hint ? `${id}-hint` : undefined}
+        aria-invalid={error ? 'true' : undefined}
+        aria-describedby={describedBy}
       />
       {hint && <p className="field-hint" id={`${id}-hint`}>{hint}</p>}
+      {error && <p className="field-error" id={`${id}-error`} role="alert">{error}</p>}
     </div>
   );
 }
@@ -158,6 +162,8 @@ Field.propTypes = {
   disabled: PropTypes.bool,
   min: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   hint: PropTypes.string,
+  error: PropTypes.string,
+  id: PropTypes.string,
   as: PropTypes.string,
   autoComplete: PropTypes.string,
 };
@@ -205,8 +211,9 @@ StatusBadge.propTypes = { status: PropTypes.string.isRequired, label: PropTypes.
 
 function SearchForm({ children, onSubmit, onClear, busy, submitLabel, id }) {
   const { t } = useLanguage();
+  const { formProps } = useSmartEnter();
   return (
-    <form className="panel search-panel" onSubmit={onSubmit} role="search" aria-label={id}>
+    <form className="panel search-panel" onSubmit={onSubmit} role="search" aria-label={id} {...formProps}>
       <div className="search-grid">{children}</div>
       <div className="search-actions">
         <button type="submit" className="btn btn-primary" disabled={busy}>
@@ -293,7 +300,7 @@ function AppShell() {
       <Route path="/patient/*" element={<Protected roles={['patient']}><PatientArea /></Protected>} />
       <Route path="/doctor/*" element={<Protected roles={['doctor']}><DoctorArea /></Protected>} />
       <Route path="/admin/*" element={<Protected roles={['admin']}><AdminArea /></Protected>} />
-      <Route path="/access-denied" element={<MessagePage title="Access denied" body="This page is not available to your account. Sign in with an account that has the right role." />} />
+      <Route path="/access-denied" element={<MessagePage title={t('common.accessDeniedTitle')} body={t('common.accessDeniedBody')} />} />
       <Route path="*" element={<NotFoundPage signedIn={Boolean(user)} />} />
     </Routes>
   );
@@ -312,7 +319,6 @@ function AppShell() {
           <Link className="brand" to="/login"><span className="brand-mark"><BrandMark /></span><span className="brand-name">CareBridge</span></Link>
           <div className="header-actions">
             <Link className="btn btn-ghost btn-sm public-help-link" to="/help">{t('common.help')}</Link>
-            <LanguageSwitcher compact />
             <Link className="btn btn-outline btn-sm" to="/login">{t('common.logIn')}</Link>
             <Link className="btn btn-primary btn-sm" to="/register">{t('common.register')}</Link>
           </div>
@@ -325,14 +331,14 @@ function AppShell() {
 
   return (
     <div className="app-shell">
-      <a className="skip-link" href="#main-content">Skip to main content</a>
+      <a className="skip-link" href="#main-content">{t('common.skipToContent')}</a>
       <header className="app-header">
         <button
           type="button"
           className="menu-toggle"
           aria-expanded={mobileNavOpen}
           aria-controls={mobileNavId}
-          aria-label={mobileNavOpen ? 'Close navigation' : 'Open navigation'}
+          aria-label={mobileNavOpen ? t('common.closeNavigation') : t('common.openNavigation')}
           onClick={() => setMobileNavOpen((open) => !open)}
         >
           {mobileNavOpen ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}
@@ -342,7 +348,7 @@ function AppShell() {
           <span className="brand-name">CareBridge</span>
         </Link>
         <div className="header-actions">
-          <LanguageSwitcher compact />
+          {user.role === 'patient' && <LanguageSwitcher compact />}
           <div className="account-chip">
             <span className="account-avatar" aria-hidden="true">{initials(user.name)}</span>
             <span className="account-text">
@@ -358,7 +364,7 @@ function AppShell() {
 
       <div className="app-body">
         <Sidebar user={user} pathname={location.pathname} id={mobileNavId} open={mobileNavOpen} onNavigate={() => setMobileNavOpen(false)} />
-        {mobileNavOpen && <button type="button" className="nav-backdrop" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
+        {mobileNavOpen && <button type="button" className="nav-backdrop" aria-label={t('common.closeNavigation')} onClick={() => setMobileNavOpen(false)} />}
         <main className="app-main" id="main-content" tabIndex={-1}>
           {routes}
           <AppFooter />
@@ -413,10 +419,11 @@ function AppFooter() {
 }
 
 function MessagePage({ title, body }) {
+  const { t } = useLanguage();
   return (
     <div className="page page-narrow">
       <div className="panel">
-        <Empty title={title} text={body} action={<Link className="btn btn-primary" to="/">Go to my workspace</Link>} />
+        <Empty title={title} text={body} action={<Link className="btn btn-primary" to="/">{t('common.goWorkspace')}</Link>} />
       </div>
     </div>
   );
@@ -425,8 +432,9 @@ MessagePage.propTypes = { title: PropTypes.string.isRequired, body: PropTypes.st
 
 function Protected({ roles, children }) {
   const { user, loading } = useAuth();
+  const { t } = useLanguage();
   const location = useLocation();
-  if (loading) return <Loading label="Checking your session…" />;
+  if (loading) return <Loading label={t('common.checkingSession')} />;
   if (!user) return <Navigate to="/login" replace state={{ from: { pathname: location.pathname, search: location.search, hash: location.hash } }} />;
   return roles && !roles.includes(user.role) ? <Navigate to="/access-denied" replace /> : children;
 }
@@ -445,20 +453,43 @@ function AuthPage({ register = false }) {
   const [role, setRole] = useState(params.get('role') === 'doctor' ? 'doctor' : 'patient');
   const [form, setForm] = useState({ name: '', email: '', password: '', phone: '', specialization: '', qualification: '', experienceYears: '', consultationFee: '', hospital: '', district: '', biography: '' });
   const [error, setError] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const change = (key) => (value) => setForm((current) => ({ ...current, [key]: value }));
+
+  const emailIsValid = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+  const validateEmailField = () => {
+    if (!form.email.trim()) { setEmailError(t('validation.required')); return false; }
+    if (!emailIsValid(form.email)) { setEmailError(t('validation.email')); return false; }
+    setEmailError('');
+    return true;
+  };
+
+  // Enter validates the email and steps to the password field; Enter in the last
+  // field submits the form through its normal submit handler.
+  const { formProps } = useSmartEnter({
+    autoFocus: true,
+    focusKey: register ? 'register' : 'login',
+    beforeAdvance: (element) => (element.type === 'email' ? validateEmailField() : true),
+  });
 
   // Keep the selected account type in step with the registration link the visitor used.
   useEffect(() => { if (register) setRole(params.get('role') === 'doctor' ? 'doctor' : 'patient'); }, [register, params]);
 
   const submit = async (event) => {
     event.preventDefault();
+    if (busy) return;
     setError('');
+    setEmailError('');
+    setPasswordError('');
     const email = form.email.trim();
     if (register && form.name.trim().length < 2) return setError(t('validation.nameLength'));
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setError(t('validation.email'));
-    if (form.password.length < 8) return setError(t('validation.passwordLength'));
+    if (!email) { setEmailError(t('validation.required')); document.getElementById('auth-email')?.focus(); return; }
+    if (!emailIsValid(email)) { setEmailError(t('validation.email')); document.getElementById('auth-email')?.focus(); return; }
+    if (!form.password) { setPasswordError(t('validation.required')); document.getElementById('auth-password')?.focus(); return; }
+    if (form.password.length < 8) { setPasswordError(t('validation.passwordLength')); document.getElementById('auth-password')?.focus(); return; }
     if (register && role === 'doctor' && (!form.specialization.trim() || !form.qualification.trim() || !form.district.trim())) return setError(t('validation.required'));
     setBusy(true);
     try {
@@ -488,7 +519,6 @@ function AuthPage({ register = false }) {
       </section>
 
       <section className="auth-card">
-        <div className="auth-topbar"><LanguageSwitcher compact /></div>
         <div className="auth-heading">
           <p className="eyebrow">CareBridge</p>
           <h1>{register ? t('auth.registerTitle') : t('auth.signInTitle')}</h1>
@@ -497,7 +527,7 @@ function AuthPage({ register = false }) {
 
         {error && <Alert tone="error">{error}</Alert>}
 
-        <form onSubmit={submit} className="auth-form" noValidate>
+        <form onSubmit={submit} className="auth-form" noValidate {...formProps}>
           {register && (
             <>
               <div className="role-switch" role="group" aria-label={t('auth.accountType')}>
@@ -509,9 +539,19 @@ function AuthPage({ register = false }) {
             </>
           )}
 
-          <Field label={t('auth.email')} type="email" required value={form.email} onChange={change('email')} placeholder={t('auth.emailPlaceholder')} autoComplete="email" />
+          <Field
+            id="auth-email"
+            label={t('auth.email')}
+            type="email"
+            required
+            value={form.email}
+            onChange={(value) => { setEmailError(''); change('email')(value); }}
+            placeholder={t('auth.emailPlaceholder')}
+            autoComplete="email"
+            error={emailError}
+          />
 
-          <div className="field">
+          <div className={`field${passwordError ? ' has-error' : ''}`}>
               <label htmlFor="auth-password">{t('auth.password')} <span className="required-mark" aria-hidden="true">*</span></label>
               <div className="password-control">
                 <input
@@ -522,8 +562,10 @@ function AuthPage({ register = false }) {
                   maxLength={128}
                   autoComplete={register ? 'new-password' : 'current-password'}
                   value={form.password}
-                  onChange={(event) => change('password')(event.target.value)}
+                  onChange={(event) => { setPasswordError(''); change('password')(event.target.value); }}
                   placeholder={t('auth.passwordPlaceholder')}
+                  aria-invalid={passwordError ? 'true' : undefined}
+                  aria-describedby={passwordError ? 'auth-password-error' : undefined}
                 />
                 <button
                   type="button"
@@ -535,6 +577,7 @@ function AuthPage({ register = false }) {
                   {showPassword ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
                 </button>
               </div>
+              {passwordError && <p className="field-error" id="auth-password-error" role="alert">{passwordError}</p>}
           </div>
 
           {register && role === 'doctor' && (
@@ -574,24 +617,25 @@ AuthPage.propTypes = { register: PropTypes.bool };
 /* ------------------------------------------------------------------ */
 
 function AboutPage() {
+  const { t } = useLanguage();
   return (
     <div className="page">
-      <PageHeader eyebrow="About" title="CareBridge" description="A rural healthcare support platform built as an academic full-stack project at Kumaraguru College of Technology." />
+      <PageHeader eyebrow={t('about.eyebrow')} title={t('about.title')} description={t('about.description')} />
       <div className="split-2">
         <section className="panel">
-          <h2>What the platform does</h2>
-          <p>CareBridge helps people discover administrator-verified doctors and published healthcare centres, request appointments from doctor-provided availability, and keep personal medicine reminders.</p>
-          <p>Doctor profiles are visible in the public directory only after administrator approval. Health-topic search and healthcare news are attributed to their external sources and are separate from your CareBridge records.</p>
+          <h2>{t('about.whatTitle')}</h2>
+          <p>{t('about.whatP1')}</p>
+          <p>{t('about.whatP2')}</p>
         </section>
         <section className="panel">
-          <h2>What it does not do</h2>
+          <h2>{t('about.notTitle')}</h2>
           <ul className="plain-list">
-            <li>It does not provide a diagnosis or replace a qualified healthcare professional.</li>
-            <li>Symptom guidance is a small rule-based educational example, not AI or clinical triage.</li>
-            <li>Medicine reminders are saved in the application only; no notifications are sent.</li>
-            <li>Directory records are not live facility availability or verified service status.</li>
+            <li>{t('about.not1')}</li>
+            <li>{t('about.not2')}</li>
+            <li>{t('about.not3')}</li>
+            <li>{t('about.not4')}</li>
           </ul>
-          <p className="muted">{DISCLAIMER}</p>
+          <p className="muted">{t('common.disclaimer')}</p>
         </section>
       </div>
     </div>
@@ -599,16 +643,17 @@ function AboutPage() {
 }
 
 function PrivacyPage() {
+  const { t } = useLanguage();
   return (
     <div className="page page-narrow">
-      <PageHeader eyebrow="Privacy" title="Privacy information" description="What CareBridge stores and what leaves the application." />
+      <PageHeader eyebrow={t('privacyPage.eyebrow')} title={t('privacyPage.title')} description={t('privacyPage.description')} />
       <section className="panel prose">
-        <h2>Account and application data</h2>
-        <p>Account details and application records are stored by the CareBridge backend for authentication and the workflows you use. Passwords are hashed and are never stored in browser storage. Do not share passwords or enter sensitive medical information.</p>
-        <h2>External services</h2>
-        <p>Health-topic search sends only the search words you enter to the U.S. National Library of Medicine’s MedlinePlus service. It does not send your account, symptom text, or appointment data. Map tiles are requested from the configured tile provider when a map is shown. Browser location is requested only after you choose “Use my location”; CareBridge does not store your location.</p>
-        <h2>Limitations</h2>
-        <p>This academic project is not a certified clinical system. Directory data may be incomplete or out of date and does not represent live facility status.</p>
+        <h2>{t('privacyPage.accountTitle')}</h2>
+        <p>{t('privacyPage.accountText')}</p>
+        <h2>{t('privacyPage.externalTitle')}</h2>
+        <p>{t('privacyPage.externalText')}</p>
+        <h2>{t('privacyPage.limitsTitle')}</h2>
+        <p>{t('privacyPage.limitsText')}</p>
       </section>
     </div>
   );
@@ -802,7 +847,7 @@ function DoctorDirectory() {
 function DoctorDetail() {
   const { id } = useParams();
   const { user } = useAuth();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [profile, setProfile] = useState(null);
   const [slots, setSlots] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -832,11 +877,11 @@ function DoctorDetail() {
     setError('');
     api.get(`/doctors/${id}`)
       .then(({ data }) => { if (!cancelled) setProfile(data.doctor); })
-      .catch((err) => { if (!cancelled) setError(err.response?.status === 404 ? 'This doctor profile is not available. It may still be awaiting administrator approval.' : errorMessage(err)); })
+      .catch((err) => { if (!cancelled) setError(err.response?.status === 404 ? t('doctors.profileUnavailable') : errorMessage(err)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     loadSlots();
     return () => { cancelled = true; };
-  }, [id, loadSlots]);
+  }, [id, loadSlots, t]);
 
   const book = async () => {
     if (!selected || !profile) return;
@@ -942,7 +987,7 @@ function DoctorDetail() {
                   disabled={!slot.available || !canBook}
                   onClick={() => setSelected(key)}
                 >
-                  <strong>{formatShortDate(slot.date)}</strong>
+                  <strong>{formatShortDate(slot.date, lang)}</strong>
                   <span>{slot.startTime}–{slot.endTime}</span>
                   <small>{slot.available ? (isSelected ? t('doctors.selected') : t('doctors.available')) : t('doctors.requested')}</small>
                 </button>
@@ -983,7 +1028,7 @@ function DoctorDetail() {
             {booking ? <span className="spinner spinner-light" aria-hidden="true" /> : <CalendarDays size={16} aria-hidden="true" />}
             {booking ? t('doctors.submitting') : t('doctors.requestSlot')}
           </button>
-          {selectedSlot && <p className="booking-summary">{formatDate(selectedSlot.date)} · {selectedSlot.startTime}–{selectedSlot.endTime}</p>}
+          {selectedSlot && <p className="booking-summary">{formatDate(selectedSlot.date, lang)} · {selectedSlot.startTime}–{selectedSlot.endTime}</p>}
         </div>
       </section>
     </div>
@@ -1122,7 +1167,7 @@ const QUICK_ACCESS = [
 
 function PatientDashboard() {
   const { user } = useAuth();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [appointments, setAppointments] = useState([]);
   const [reminders, setReminders] = useState([]);
   const [error, setError] = useState('');
@@ -1207,7 +1252,7 @@ function PatientDashboard() {
             {upcoming.slice(0, 4).map((appointment) => (
               <li className="list-row" key={appointment._id}>
                 <span className="date-block">
-                  <strong>{formatShortDate(appointment.appointmentDate)}</strong>
+                  <strong>{formatShortDate(appointment.appointmentDate, lang)}</strong>
                   <span>{appointment.startTime}–{appointment.endTime}</span>
                 </span>
                 <span className="list-main">
@@ -1242,7 +1287,7 @@ function PatientDashboard() {
                 <span className="list-icon"><Pill size={16} aria-hidden="true" /></span>
                 <span className="list-main">
                   <strong>{reminder.medicineName}</strong>
-                  <small>{reminder.reminderTime} · {t('patient.until', { date: formatShortDate(reminder.endDate) })}</small>
+                  <small>{reminder.reminderTime} · {t('patient.until', { date: formatShortDate(reminder.endDate, lang) })}</small>
                 </span>
                 <StatusBadge status="active" />
               </li>
@@ -1263,6 +1308,7 @@ function PatientDashboard() {
 
 function PatientServices() {
   const { t } = useLanguage();
+  const { formProps } = useSmartEnter();
   const [filters, setFilters] = useState({ service: '', district: '' });
   const [centres, setCentres] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1340,7 +1386,7 @@ function PatientServices() {
 
       <section className="panel" aria-labelledby="nearby-heading">
         <SectionHeader id="nearby-heading" title={t('services.nearbyTitle')} description={t('services.nearbyDescription')} />
-        <form className="search-inline" onSubmit={findNearby}>
+        <form className="search-inline" onSubmit={findNearby} {...formProps}>
           <Field label={t('services.nearbyTitle')} value={place} onChange={setPlace} placeholder={t('services.nearbyPlaceholder')} />
           <button type="submit" className="btn btn-primary" disabled={nearbyLoading || place.trim().length < 2}>
             {nearbyLoading ? <span className="spinner spinner-light" aria-hidden="true" /> : <MapPin size={15} aria-hidden="true" />}
@@ -1469,7 +1515,7 @@ function AppointmentsPage({ role, view = 'all' }) {
 AppointmentsPage.propTypes = { role: PropTypes.string.isRequired, view: PropTypes.string };
 
 function AppointmentTable({ appointments, role, onChanged }) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [busyId, setBusyId] = useState('');
   const [error, setError] = useState('');
 
@@ -1528,7 +1574,7 @@ function AppointmentTable({ appointments, role, onChanged }) {
                   {role !== 'patient' && <small className="cell-sub">{appointment.patient?.email || ''}</small>}
                 </td>
                 <td data-label={t('appointments.reason')}>{appointment.reason}</td>
-                <td data-label={t('appointments.date')}>{formatDate(appointment.appointmentDate)}</td>
+                <td data-label={t('appointments.date')}>{formatDate(appointment.appointmentDate, lang)}</td>
                 <td data-label={t('appointments.time')}>{appointment.startTime}–{appointment.endTime}</td>
                 <td data-label={t('appointments.mode')}>{appointment.consultationMode === 'online' ? t('appointments.online') : t('appointments.inPerson')}</td>
                 <td data-label={t('appointments.status')}><StatusBadge status={appointment.status} /></td>
@@ -1544,7 +1590,8 @@ function AppointmentTable({ appointments, role, onChanged }) {
 AppointmentTable.propTypes = { appointments: PropTypes.arrayOf(PropTypes.object).isRequired, role: PropTypes.string.isRequired, onChanged: PropTypes.func };
 
 function Reminders() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
+  const { formProps } = useSmartEnter();
   const emptyForm = { medicineName: '', reminderTime: '', startDate: '', endDate: '', instructions: '' };
   const [items, setItems] = useState([]);
   const [form, setForm] = useState(emptyForm);
@@ -1619,7 +1666,7 @@ function Reminders() {
           <h2 className="panel-title">{editing ? t('reminders.editTitle') : t('reminders.addTitle')}</h2>
           {error && <Alert tone="error">{error}</Alert>}
           {message && <Alert tone="success">{message}</Alert>}
-          <form onSubmit={submit} className="form-grid">
+          <form onSubmit={submit} className="form-grid" {...formProps}>
             <Field label={t('reminders.medicineName')} required value={form.medicineName} onChange={update('medicineName')} placeholder={t('reminders.medicinePlaceholder')} />
             <Field label={t('reminders.time')} type="time" required value={form.reminderTime} onChange={update('reminderTime')} />
             <Field label={t('reminders.startDate')} type="date" required value={form.startDate} onChange={update('startDate')} />
@@ -1643,7 +1690,7 @@ function Reminders() {
                   <span className="list-icon"><Pill size={16} aria-hidden="true" /></span>
                   <span className="list-main">
                     <strong>{item.medicineName}</strong>
-                    <small>{item.reminderTime} · {formatShortDate(item.startDate)} – {formatShortDate(item.endDate)}{item.instructions ? ` · ${item.instructions}` : ''}</small>
+                    <small>{item.reminderTime} · {formatShortDate(item.startDate, lang)} – {formatShortDate(item.endDate, lang)}{item.instructions ? ` · ${item.instructions}` : ''}</small>
                   </span>
                   <StatusBadge status={item.active ? 'active' : 'inactive'} />
                   <span className="row-actions">
@@ -1668,6 +1715,9 @@ function Reminders() {
 /* ------------------------------------------------------------------ */
 
 function HealthGuidance() {
+  const { t } = useLanguage();
+  const { formProps: guidanceFormProps } = useSmartEnter();
+  const { formProps: topicFormProps } = useSmartEnter();
   const [symptoms, setSymptoms] = useState('');
   const [result, setResult] = useState(null);
   const [guidanceError, setGuidanceError] = useState('');
@@ -1718,65 +1768,65 @@ function HealthGuidance() {
 
   return (
     <div className="page guidance-page">
-      <PageHeader title="Health guidance" description="Educational information and attributed external sources. This is not a diagnosis." />
+      <PageHeader title={t('guidance.title')} description={t('guidance.description')} />
 
       <div className="notice-banner">
         <Info size={20} aria-hidden="true" />
         <div>
-          <strong>Educational symptom guidance, not AI or triage</strong>
-          <p>CareBridge matches the key words from your description with MedlinePlus.gov, the U.S. National Library of Medicine’s public health-topic service. The description itself is not stored, and no result can diagnose a condition. MedlinePlus topics are in English.</p>
+          <strong>{t('guidance.bannerTitle')}</strong>
+          <p>{t('guidance.bannerText')}</p>
         </div>
       </div>
 
       <div className="split-2 align-start">
         <section className="panel">
-          <h2 className="panel-title">General symptom guidance</h2>
-          <form onSubmit={askForGuidance} className="stack">
-            <Field label="Describe what you are experiencing (optional)" as="textarea" value={symptoms} onChange={setSymptoms} placeholder="Share only what you are comfortable entering" hint="Only matched keywords are sent to MedlinePlus.gov; your description is not stored." />
-            <button type="submit" className="btn btn-primary" disabled={guidanceBusy}>{guidanceBusy ? 'Looking up…' : 'Show general guidance'}</button>
+          <h2 className="panel-title">{t('guidance.generalTitle')}</h2>
+          <form onSubmit={askForGuidance} className="stack" {...guidanceFormProps}>
+            <Field label={t('guidance.describeLabel')} as="textarea" value={symptoms} onChange={setSymptoms} placeholder={t('guidance.describePlaceholder')} hint={t('guidance.describeHint')} />
+            <button type="submit" className="btn btn-primary" disabled={guidanceBusy}>{guidanceBusy ? t('guidance.lookingUp') : t('guidance.showGuidance')}</button>
           </form>
           {guidanceError && <Alert tone="error">{guidanceError}</Alert>}
-          {result?.general && <p className="muted small">CareBridge cannot tell what is causing symptoms. For severe, new, worsening or persistent symptoms, contact a qualified healthcare professional. In an emergency, contact local emergency services.</p>}
-          {result?.emergency && <Alert tone="error">Your description may include warning signs. This lookup cannot assess an emergency. Contact local emergency services or seek urgent professional medical evaluation now.</Alert>}
+          {result?.general && <p className="muted small">{t('guidance.cannotTell')}</p>}
+          {result?.emergency && <Alert tone="error">{t('guidance.emergency')}</Alert>}
           {result && !result.emergency && result.available === false && <Alert tone="warning">{result.message}</Alert>}
           {result?.available && result.message && <p className="muted small">{result.message}</p>}
           {result?.topics?.length > 0 && (
             <>
-              <p className="source-meta">Matched {result.keywords.map((word) => `“${word}”`).join(', ')} · Source: MedlinePlus.gov. MedlinePlus does not endorse CareBridge.</p>
+              <p className="source-meta">{t('guidance.matched', { keywords: result.keywords.map((word) => `“${word}”`).join(', ') })}</p>
               <ul className="source-list">
                 {result.topics.map((topic) => (
                   <li key={topic.url}>
                     <a href={topic.url} target="_blank" rel="noopener noreferrer">{topic.title} <ArrowRight size={14} aria-hidden="true" /></a>
                     {topic.summary && <p>{topic.summary}</p>}
-                    <small>Source: MedlinePlus.gov{topic.categories?.length ? ` · ${topic.categories.join(', ')}` : ''}</small>
+                    <small>{t('guidance.sourceLine')}{topic.categories?.length ? ` · ${topic.categories.join(', ')}` : ''}</small>
                   </li>
                 ))}
               </ul>
             </>
           )}
-          {result?.topics?.length === 0 && result.available && !result.emergency && !result.message && <p className="muted small">No MedlinePlus topic matched those keywords. Try plainer words such as “headache” or “fever”.</p>}
-          {result && !result.general && <p className="muted small">This educational lookup cannot tell what is causing symptoms. If symptoms are severe, new, worsening, persistent or concerning, contact a qualified healthcare professional.</p>}
+          {result?.topics?.length === 0 && result.available && !result.emergency && !result.message && <p className="muted small">{t('guidance.noMatch')}</p>}
+          {result && !result.general && <p className="muted small">{t('guidance.notDiagnosis')}</p>}
         </section>
 
         <section className="panel">
-          <h2 className="panel-title">Search health topics</h2>
-          <p className="muted">Search sends only these keywords to the U.S. National Library of Medicine’s MedlinePlus service. Topics are in English.</p>
-          <form className="search-inline" onSubmit={searchTopics}>
-            <Field label="Health topic" value={query} onChange={setQuery} placeholder="e.g. diabetes" required />
+          <h2 className="panel-title">{t('guidance.searchTitle')}</h2>
+          <p className="muted">{t('guidance.searchText')}</p>
+          <form className="search-inline" onSubmit={searchTopics} {...topicFormProps}>
+            <Field label={t('guidance.topicLabel')} value={query} onChange={setQuery} placeholder={t('guidance.topicPlaceholder')} required />
             <button type="submit" className="btn btn-primary" disabled={searching || query.trim().length < 2}>
-              {searching ? 'Searching…' : 'Search topics'} <Search size={15} aria-hidden="true" />
+              {searching ? t('guidance.searching') : t('guidance.searchButton')} <Search size={15} aria-hidden="true" />
             </button>
           </form>
           {searchError && <Alert tone="error">{searchError}</Alert>}
           {topics.length > 0 && (
             <>
-              <p className="source-meta">{stale ? 'Older cached result (refresh unavailable)' : cached ? 'Cached result' : 'Retrieved now'} · Source: MedlinePlus.gov. MedlinePlus does not endorse CareBridge.</p>
+              <p className="source-meta">{t('guidance.sourceMeta', { freshness: stale ? t('guidance.freshnessStale') : cached ? t('guidance.freshnessCached') : t('guidance.freshnessNow') })}</p>
               <ul className="source-list">
                 {topics.map((topic) => (
                   <li key={topic.url}>
                     <a href={topic.url} target="_blank" rel="noopener noreferrer">{topic.title} <ArrowRight size={14} aria-hidden="true" /></a>
                     {topic.summary && <p>{topic.summary}</p>}
-                    <small>Source: MedlinePlus.gov{topic.categories?.length ? ` · ${topic.categories.join(', ')}` : ''}</small>
+                    <small>{t('guidance.sourceLine')}{topic.categories?.length ? ` · ${topic.categories.join(', ')}` : ''}</small>
                   </li>
                 ))}
               </ul>
@@ -1786,12 +1836,14 @@ function HealthGuidance() {
       </div>
 
       <MedicalUpdates />
-      <p className="disclaimer-box">{DISCLAIMER}</p>
+      <p className="disclaimer-box">{t('common.disclaimer')}</p>
     </div>
   );
 }
 
 function MedicalUpdates() {
+  const { t, lang } = useLanguage();
+  const { formProps } = useSmartEnter();
   const [topic, setTopic] = useState('healthcare');
   const [news, setNews] = useState(null);
   const [newsError, setNewsError] = useState('');
@@ -1832,65 +1884,65 @@ function MedicalUpdates() {
 
   return (
     <section aria-labelledby="updates-heading">
-      <SectionHeader id="updates-heading" title="Healthcare news and research" description="Sourced reporting and publication records. Not clinical advice." />
+      <SectionHeader id="updates-heading" title={t('updates.title')} description={t('updates.description')} />
       <div className="split-2 align-start">
         <section className="panel">
           <div className="panel-title-row">
-            <h3>Aggregated healthcare news</h3>
+            <h3>{t('updates.newsTitle')}</h3>
             <label className="field inline-field">
-              <span>Topic</span>
+              <span>{t('updates.topicLabel')}</span>
               <select value={topic} onChange={(event) => { setTopic(event.target.value); loadNews(event.target.value); }}>
-                <option value="healthcare">Healthcare</option>
-                <option value="hospitals">Hospitals and systems</option>
-                <option value="research">Research and innovation</option>
-                <option value="public_health">Public-health updates</option>
-                <option value="india">India-related healthcare</option>
+                <option value="healthcare">{t('updates.topicHealthcare')}</option>
+                <option value="hospitals">{t('updates.topicHospitals')}</option>
+                <option value="research">{t('updates.topicResearch')}</option>
+                <option value="public_health">{t('updates.topicPublicHealth')}</option>
+                <option value="india">{t('updates.topicIndia')}</option>
               </select>
             </label>
           </div>
-          <p className="muted small">GDELT collects publisher reporting; articles are not medically verified by GDELT or CareBridge.</p>
-          {newsLoading && <Loading label="Loading news…" />}
+          <p className="muted small">{t('updates.newsNote')}</p>
+          {newsLoading && <Loading label={t('updates.loadingNews')} />}
           {newsError && <Alert tone="error" onRetry={() => loadNews(topic)}>{newsError}</Alert>}
           {news && (
             <>
-              <p className="source-meta">{news.stale ? 'Older cached items (refresh unavailable)' : news.cached ? 'Cached items' : 'Retrieved now'} · GDELT DOC 2.0 · {news.retrievedAt ? new Date(news.retrievedAt).toLocaleString() : 'Retrieval time unavailable'}</p>
+              <p className="source-meta">{t('updates.newsMeta', { freshness: news.stale ? t('updates.freshnessStale') : news.cached ? t('updates.freshnessCached') : t('updates.freshnessNow'), time: news.retrievedAt ? new Date(news.retrievedAt).toLocaleString(dateLocale(lang)) : t('updates.retrievalUnavailable') })}</p>
               {news.articles.length ? (
                 <ul className="source-list">
                   {news.articles.map((article) => (
                     <li key={article.url}>
                       <a href={article.url} target="_blank" rel="noopener noreferrer">{article.title} <ArrowRight size={14} aria-hidden="true" /></a>
-                      <small>{article.publisher}{article.publishedAt ? ` · ${new Date(article.publishedAt).toLocaleString()}` : ''}{article.language ? ` · ${article.language}` : ''}</small>
+                      <small>{article.publisher}{article.publishedAt ? ` · ${new Date(article.publishedAt).toLocaleString(dateLocale(lang))}` : ''}{article.language ? ` · ${article.language}` : ''}</small>
                     </li>
                   ))}
                 </ul>
-              ) : <Empty title="No recent stories found" text="Try another topic later. No headlines are generated when the source has none." />}
+              ) : <Empty title={t('updates.noNewsTitle')} text={t('updates.noNewsText')} />}
             </>
           )}
         </section>
 
         <section className="panel">
-          <h3>Recent medical research</h3>
-          <p className="muted small">PubMed records are research citations, not clinical recommendations.</p>
-          <form className="search-inline" onSubmit={loadResearch}>
-            <Field label="Research topic" value={researchQuery} onChange={setResearchQuery} placeholder="For example, diabetes" required />
+          <h3>{t('updates.researchTitle')}</h3>
+          <p className="muted small">{t('updates.researchNote')}</p>
+          <form className="search-inline" onSubmit={loadResearch} {...formProps}>
+            <Field label={t('updates.researchLabel')} value={researchQuery} onChange={setResearchQuery} placeholder={t('updates.researchPlaceholder')} required />
             <button type="submit" className="btn btn-primary" disabled={researchLoading || researchQuery.trim().length < 2}>
-              {researchLoading ? 'Searching…' : 'Search PubMed'} <Search size={15} aria-hidden="true" />
+              {researchLoading ? t('common.searching') : t('updates.searchPubMed')} <Search size={15} aria-hidden="true" />
             </button>
           </form>
           {researchError && <Alert tone="error">{researchError}</Alert>}
           {research && (
             <>
-              <p className="source-meta">{research.stale ? 'Older cached publications (refresh unavailable)' : research.cached ? 'Cached publications' : 'Retrieved now'} · PubMed / NCBI · {research.retrievedAt ? new Date(research.retrievedAt).toLocaleString() : 'Retrieval time unavailable'}</p>
+              <p className="source-meta">{t('updates.researchMeta', { freshness: research.stale ? t('updates.stalePublications') : research.cached ? t('updates.cachedPublications') : t('updates.freshnessNow'), time: research.retrievedAt ? new Date(research.retrievedAt).toLocaleString(dateLocale(lang)) : t('updates.retrievalUnavailable') })}</p>
               {research.publications.length ? (
                 <ul className="source-list">
                   {research.publications.map((record) => (
                     <li key={record.pmid}>
                       <a href={record.url} target="_blank" rel="noopener noreferrer">{record.title} <ArrowRight size={14} aria-hidden="true" /></a>
-                      <small>{record.authors.length ? record.authors.join(', ') : 'Authors not listed'}{record.journal ? ` · ${record.journal}` : ''}{record.publicationDate ? ` · ${record.publicationDate}` : ''} · PMID {record.pmid || 'not supplied'}</small>
+                      <small>{record.authors.length ? record.authors.join(', ') : t('updates.authorsNotListed')}{record.journal ? ` · ${record.journal}` : ''}{record.publicationDate ? ` · ${record.publicationDate}` : ''} · {t('updates.pmid', { pmid: record.pmid || t('updates.pmidMissing') })}</small>
                     </li>
                   ))}
                 </ul>
-              ) : <Empty title="No publications found" text="Try a broader research term. PubMed returned no records for this query." />}
+              ) : <Empty title={t('updates.noResearchTitle')} text={t('updates.noResearchText')} />}
             </>
           )}
         </section>
@@ -1921,8 +1973,9 @@ function ProfileCompleteness({ value, label = 'Profile completeness' }) {
 ProfileCompleteness.propTypes = { value: PropTypes.number.isRequired, label: PropTypes.string };
 
 function ProfileHero({ name, email, subtitle, badges, actions }) {
+  const { t } = useLanguage();
   return (
-    <section className="panel profile-hero-panel" aria-label="Profile summary">
+    <section className="panel profile-hero-panel" aria-label={t('profile.summaryAria')}>
       <div className="profile-identity">
         <ProfileAvatar name={name} />
         <div className="profile-identity-text">
@@ -1946,7 +1999,8 @@ ProfileHero.propTypes = {
 
 function PatientProfile() {
   const { user, setUser } = useAuth();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
+  const { formProps } = useSmartEnter();
   const [name, setName] = useState(user.name || '');
   const [phone, setPhone] = useState(user.phone || '');
   const [message, setMessage] = useState('');
@@ -1998,7 +2052,7 @@ function PatientProfile() {
               <p>{t('profile.accountDetailsDescription')}</p>
             </div>
           </div>
-          <form onSubmit={submit} className="stack">
+          <form onSubmit={submit} className="stack" {...formProps}>
             <div className="form-grid">
               <Field label={t('profile.fullName')} required value={name} onChange={setName} autoComplete="name" />
               <Field label={t('profile.email')} value={user.email} onChange={() => {}} disabled hint={t('profile.emailHint')} />
@@ -2021,7 +2075,7 @@ function PatientProfile() {
             <dl className="fact-list">
               <div><dt>{t('profile.email')}</dt><dd>{user.email}</dd></div>
               <div><dt>{t('profile.phone')}</dt><dd>{user.phone || t('profile.notAdded')}</dd></div>
-              <div><dt>{t('profile.memberSince')}</dt><dd>{formatMonthYear(user.createdAt)}</dd></div>
+              <div><dt>{t('profile.memberSince')}</dt><dd>{formatMonthYear(user.createdAt, lang)}</dd></div>
               <div><dt>{t('profile.status')}</dt><dd>{user.status === 'active' ? t('profile.active') : t('profile.inactiveAccount')}</dd></div>
             </dl>
             <ProfileCompleteness value={completeness} label={t('profile.completeness')} />
@@ -2141,6 +2195,7 @@ function DoctorDashboard() {
 
 function DoctorProfileEditor() {
   const { user } = useAuth();
+  const { formProps } = useSmartEnter();
   const [form, setForm] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -2221,7 +2276,7 @@ function DoctorProfileEditor() {
               <p>Patients use these details to decide whether to request an appointment.</p>
             </div>
           </div>
-          <form onSubmit={submit} className="stack">
+          <form onSubmit={submit} className="stack" {...formProps}>
             <div className="form-section">
               <h3 className="panel-title">Practice information</h3>
               <div className="form-grid">
@@ -2271,6 +2326,7 @@ function DoctorProfileEditor() {
 }
 
 function AvailabilityEditor() {
+  const { formProps } = useSmartEnter();
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({ date: '', startTime: '', endTime: '' });
   const [error, setError] = useState('');
@@ -2320,7 +2376,7 @@ function AvailabilityEditor() {
           <h2 className="panel-title">Add a slot</h2>
           {error && <Alert tone="error">{error}</Alert>}
           {message && <Alert tone="success">{message}</Alert>}
-          <form onSubmit={add} className="form-grid">
+          <form onSubmit={add} className="form-grid" {...formProps}>
             <Field label="Date" type="date" required value={form.date} onChange={(value) => setForm({ ...form, date: value })} />
             <Field label="Start time" type="time" required value={form.startTime} onChange={(value) => setForm({ ...form, startTime: value })} />
             <Field label="End time" type="time" required value={form.endTime} onChange={(value) => setForm({ ...form, endTime: value })} />
@@ -2641,6 +2697,7 @@ function DoctorReview() {
 }
 
 function HospitalManagement() {
+  const { formProps } = useSmartEnter();
   const [hospitals, setHospitals] = useState([]);
   const [form, setForm] = useState({ name: '', address: '', district: '', contact: '', services: '' });
   const [error, setError] = useState('');
@@ -2713,7 +2770,7 @@ function HospitalManagement() {
 
       <section className="panel">
         <h2 className="panel-title">Add a centre</h2>
-        <form onSubmit={submit} className="form-grid">
+        <form onSubmit={submit} className="form-grid" {...formProps}>
           <Field label="Centre name" required value={form.name} onChange={set('name')} />
           <Field label="Address" required value={form.address} onChange={set('address')} />
           <Field label="District" required value={form.district} onChange={set('district')} />
@@ -2760,11 +2817,11 @@ function HospitalManagement() {
 function App() {
   return (
     <BrowserRouter>
-      <LanguageProvider>
-        <AuthProvider>
+      <AuthProvider>
+        <LanguageProvider>
           <AppShell />
-        </AuthProvider>
-      </LanguageProvider>
+        </LanguageProvider>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

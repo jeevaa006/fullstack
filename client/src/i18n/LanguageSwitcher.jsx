@@ -5,8 +5,11 @@ import useLanguage from './useLanguage';
 import { SUPPORTED_LANGUAGES } from './translations';
 
 export default function LanguageSwitcher({ compact = false }) {
-  const { lang, setLang, t } = useLanguage();
+  const { lang, setLang, t, canSwitch } = useLanguage();
   const id = useId();
+
+  // Staff and signed-out workspaces are English only; no selector is shown.
+  if (!canSwitch) return null;
 
   return (
     <div className={`language-switcher${compact ? ' is-compact' : ''}`}>

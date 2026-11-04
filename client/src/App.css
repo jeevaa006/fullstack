@@ -290,6 +290,12 @@ textarea { resize: vertical; }
   border-color: var(--border); cursor: not-allowed;
 }
 .field-hint { font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); }
+.field-error { font-size: 12.5px; line-height: 1.45; color: var(--error); font-weight: 500; }
+.field:focus-within > label, .field:focus-within > span:first-child { color: var(--blue-700); }
+.field.has-error input, .field.has-error select, .field.has-error textarea { border-color: var(--error-border); }
+.field.has-error input:focus, .field.has-error select:focus, .field.has-error textarea:focus {
+  border-color: var(--error); box-shadow: 0 0 0 3px var(--error-background);
+}
 .field.is-disabled > label { color: var(--text-secondary); }
 .inline-field { flex-direction: row; align-items: center; gap: 8px; }
 .inline-field > span { font-size: 13px; font-weight: 600; color: var(--text-secondary); }

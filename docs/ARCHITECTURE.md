@@ -33,7 +33,9 @@ Doctor availability is a stored set of `{date,startTime,endTime}` entries. The b
 
 Passwords are excluded from default reads and user serialization. Patient appointment and reminder queries scope to the signed-in user's ID. Doctors see only appointments addressed to their account; patient identity fields are populated only on authorized appointment surfaces. Public doctor APIs return approved profiles only; public hospital APIs return published records only. Error messages avoid returning internal details for server failures.
 
-MedlinePlus is called server-side only for a separately entered English health-topic search; symptoms and patient data are not transmitted. Leaflet renders stored, source-provided coordinates with OpenStreetMap tiles and attribution; it does not geocode. Symptom guidance remains local rule-based educational copy. Patient-facing screens support English and Tamil; administrator and clinical-review workspaces remain in English. Authentication uses a password hash and an HttpOnly JWT session cookie.
+MedlinePlus is called server-side only for a separately entered English health-topic search; symptoms and patient data are not transmitted. Leaflet renders stored, source-provided coordinates with OpenStreetMap tiles and attribution; it does not geocode. Symptom guidance remains local rule-based educational copy. Patient-facing screens support English and Tamil; the language is resolved from the authenticated role, so only patient accounts can switch and administrator and clinical-review workspaces remain in English. Authentication uses a password hash and an HttpOnly JWT session cookie.
+
+Forms share one Enter-key convention in `client/src/smartEnter.js`: Enter in a text field validates it and moves to the next enabled, visible field, and Enter in the last field submits through the browser's normal submit path so React handlers and native validation still run. Textareas keep new lines, selects and radio groups keep native behaviour, and IME composition is never intercepted.
 
 ## Runtime
 

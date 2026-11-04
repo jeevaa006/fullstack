@@ -110,6 +110,16 @@ The health guidance page no longer runs a local rule stub. `POST /api/v1/health-
 - GDELT: a repeated request returned HTTP 429 with “Please limit requests to one every 5 seconds”. Outbound GDELT calls are now serialized to one per 5.2 seconds; this workspace's earlier timeout was rate-limit related, not a code fault.
 - Not verified: browser rendering of the new guidance results and the live news/research cards. No Chrome/Chromium can launch here.
 
+## Verification on 2026-11-04 (role-scoped language and Enter-key navigation)
+
+Tamil is now a patient-only choice: `client/src/i18n/languagePreference.js` resolves the language from the authenticated role, stores the preference per patient account, and never stores one for staff. The selector renders only in the patient header. Forms now share `client/src/smartEnter.js` through `useSmartEnter`, so Enter validates and advances field by field and submits only from the last field.
+
+- `npm test`: 28 tests, 28 pass, 0 fail. The new unit tests cover the role and per-account storage rules, English/Tamil key and placeholder parity, and Enter behaviour for inputs, checkboxes, textareas, selects, radios, hidden/disabled fields, IME composition, modifier keys and the duplicate-submit guard.
+- `npm --prefix client run lint`: exit 0, no warnings.
+- Static translation audit: every `t('…')` key referenced in `client/src` resolves in the English dictionary.
+- `npm --prefix client run build`: **not run to completion in this session.** The container's 2 GB cgroup killed the bundler during the transform step (`oom_kill`), including with `NODE_OPTIONS=--max-old-space-size=384`, the setting recorded as sufficient earlier. Every changed file was transformed individually with esbuild instead (exit 0), which confirms syntax only; bundling and chunk sizes are unverified since the last successful build above.
+- Not verified: browser rendering of the translated patient screens and of the new Shift-free Enter flow. No Chrome/Chromium can launch here.
+
 ## Manual verification steps
 
 1. `npm run dev`, then open the Vite preview.
