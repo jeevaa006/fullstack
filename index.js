@@ -65,14 +65,12 @@ app.use((err, _req, res, _next) => {
 });
 
 async function start() {
-  const port = Number(process.env.PORT) || 5000;
-  try {
-    await connectToDatabase();
-    console.log('MongoDB connected.');
-  } catch (error) {
-    // Never print the connection string or credentials here.
-    console.error(`MongoDB unavailable (${error.code || error.name || 'connection error'}); database-backed requests will return HTTP 503.`);
+  if (process.env.NODE_ENV !== 'test') {
+    await connectToDatabase().catch((error) => {
+      console.error(`MongoDB unavailable (${error.code || error.name || 'connection error'}); database-backed requests will return HTTP 503.`);
+    });
   }
+  const port = Number(process.env.PORT) || 5000;
   mongoose.connection.on('disconnected', () => console.warn('MongoDB disconnected.'));
   mongoose.connection.on('reconnected', () => console.log('MongoDB reconnected.'));
   mongoose.connection.on('error', (error) => console.error(`MongoDB connection error (${error.name || 'connection error'}).`));
@@ -87,4 +85,4 @@ async function start() {
 }
 
 if (require.main === module) start();
-module.exports = { app, start };
+module.exports = { app };
