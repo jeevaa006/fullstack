@@ -77,7 +77,7 @@ Node.js 20+ and npm are recommended. A reachable MongoDB database is required fo
 The repository includes `vercel.json`, which deploys CareBridge as two Vercel services: an Express service (`index.js`, the existing API) and a Vite service (`client`) serving the React build from Vercel's CDN. `/api/*` rewrites to the Express service, and every other path rewrites to the Vite service, whose SPA fallback serves `index.html` so `/patient` and other deep links work on refresh.
 
 1. Link the existing Git repository to the existing Vercel project rather than creating a duplicate.
-2. Add `MONGODB_URI`, `JWT_SECRET` and `NODE_ENV=production` to Preview and Production environment variables. Do not prefix server secrets with `VITE_`. See `.env.example`.
+2. Add `MONGODB_URI`, `JWT_SECRET` and `NODE_ENV=production` to Preview and Production environment variables, then redeploy (existing deployments keep their old variables). To show the same data as local development, paste the exact `MONGODB_URI` and `JWT_SECRET` values from your private `.env`; that database is remote, so Vercel can reach it directly. Do not prefix server secrets with `VITE_`. See `.env.example` and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#sharing-the-database-used-in-development).
 3. Leave the project-level build command and output directory empty: install, build and output settings live per service in `vercel.json` (the Vite service builds `client/dist`).
 4. Deploy a preview, verify `/api/health`, `/api/health/db`, sign-in, directories and direct access to `/patient`, then promote it to production.
 

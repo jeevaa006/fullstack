@@ -10,7 +10,7 @@ CDN. No long-running Express process is required.
 | Part | Configuration |
 | --- | --- |
 | Install | Per service in `vercel.json`: `npm install` at the root, `npm install` inside `client/` |
-| Build | The Vite service runs `npm run build`; the Express service has no build step |
+| Build | The Vite service runs `npm run build`; the Express service rebuilds `client/dist` for its own static fallback |
 | Output | `client/dist`, served by the Vite service |
 | API | The Express service (`index.js`) mounts every route from `routes/api.js` under `/api` |
 | API routing | `vercel.json` rewrites `/api/*` to the Express service, which receives the original `/api/...` path |
@@ -36,12 +36,68 @@ All of them are server-side; none may use a `VITE_`/`NEXT_PUBLIC_` prefix.
 | `FRONTEND_ORIGIN` | Optional | Only needed if the API is ever served from a different host. Same-host requests are allowed automatically. |
 | `NCBI_EMAIL`, `NCBI_API_KEY` | Optional | Improves PubMed rate-limit compliance. |
 
+## Sharing the database used in development
+
+Local development connects with the private root `.env`, which holds a MongoDB Atlas
+`mongodb+srv://` URI for the `carebridge` database. Vercel builds never read `.env` (it is
+gitignored), so a deployment without a project environment variable keeps `/api/health` at 200
+while every database-backed route returns HTTP 503: the hospital and doctor directories are
+empty and sign-in fails.
+
+The Atlas cluster accepts connections from the internet, so the same connection string works
+from Vercel unchanged:
+
+1. Copy `MONGODB_URI` from the local `.env` exactly. Do not retype it: the username, password
+   and database name are already URL-encoded inside it. The database name is part of the path
+   (`mongodb+srv://…/carebridge?retryWrites=true&w=majority`); without it the driver silently
+   uses the `test` database and the site stays empty.
+2. In **Vercel → Project → Settings → Environment Variables**, add `MONGODB_URI` for Production
+   and Preview (choose all environments), then save.
+3. Add `JWT_SECRET` with the **same value as local**, so cookies issued before the deployment
+   stay valid. A different secret does not touch data; it only forces users to sign in again.
+4. Add `NODE_ENV=production`.
+5. In **Atlas → Network Access**, allow Vercel. Serverless egress IPs are dynamic, so they cannot
+   be pinned; use `0.0.0.0/0` (Atlas enables TLS for `mongodb+srv` URIs) and keep a strong
+   database-user password scoped to the `carebridge` database.
+6. Redeploy (`Deployments → ⋯ → Redeploy`). Editing a variable does not change deployments that
+   already exist, so the new value is only live after a new build.
+
+Environment variables are project-wide, so both services receive them; only the Express service
+reads them at runtime.
+
+Verify on the deployed URL and compare with this database's current contents:
+
+| Request | Expected |
+| --- | --- |
+| `GET /api/health/db` | `{"status":"ok","database":"connected"}` |
+| `GET /api/v1/hospitals` | `pagination.total` is 20 (12 per page) |
+| `GET /api/v1/doctors` | `pagination.total` is 42 approved profiles (12 per page) |
+
+If `/api/health` returns 200 but `/api/health/db` returns 503, either the variable is missing or
+misspelled, or Atlas is refusing Vercel's IP address in Network Access. If it returns 200 but the
+directories are empty, the URI points at the wrong database (usually a missing `/carebridge`).
+
+One database shared by development and production means writes on the live site change local
+data and vice versa: test accounts, appointments and deletions are shared. For a real launch,
+provision a second database, export the current collections with `npm run db:backup` and import
+them into it, then point `MONGODB_URI` at the copy. The URI grants full read/write access to
+user records with password hashes, so it must stay a server-side variable and never be prefixed
+with `VITE_`.
+
 `ADMIN_NAME`, `ADMIN_EMAIL` and `ADMIN_PASSWORD` are for the one-time `npm run seed:admin`
 script. Do not add them to Vercel unless you run the seed step locally against the production
 database. Remove them afterwards.
 
 `VITE_MAP_TILE_URL` is the only public variable. It is baked in at build time and must never
 contain a secret.
+
+## Known build warnings
+
+`npm warn Unknown env config "cache-dir"` is emitted by the npm cache directory that Vercel's
+build environment injects as `NPM_CONFIG_CACHE_DIR`. No `.npmrc` exists in this repository and
+no script sets it. npm ignores the value (the cache still resolves normally) and only warns, so
+installs and builds succeed; the warning disappears only when Vercel stops exporting the
+variable.
 
 ## Deployment procedure
 

@@ -1,6 +1,6 @@
 # CareBridge database design
 
-CareBridge uses MongoDB with Mongoose schemas and timestamps. `MONGODB_URI` selects the database (`MONGO_DB_URI` remains supported for existing Nimbus configurations); this repository does not contain credentials or automatic fictional provider seed data. The current Nimbus workspace had `MONGO_DB_URI` configured and its running API returned a successful MongoDB health result during inspection; the prior reported outage was therefore not reproducible at inspection time.
+CareBridge uses MongoDB with Mongoose schemas and timestamps. `MONGODB_URI` selects the database (`MONGO_DB_URI` remains supported as a legacy alias); this repository does not contain credentials or automatic fictional provider seed data. Development and deployment currently use a MongoDB Atlas cluster with the database `carebridge`, which holds the application's real records (hospitals, doctor profiles, appointments, medicine reminders and users with bcrypt hashes). The name must be present in the URI path: a URI without one makes the driver use `test` and the application looks empty.
 
 ## Collections and relationships
 
