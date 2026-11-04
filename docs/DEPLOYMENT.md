@@ -1,21 +1,24 @@
 # CareBridge deployment
 
 CareBridge is a Vite single-page application plus an Express API and MongoDB database.
-The API is deployed as one Vercel Node.js serverless function at `api/index.js`. The React
-build is served from Vercel's CDN. No long-running Express process is required.
+The API is deployed as the Express service declared in `vercel.json` (`index.js`), which Vercel
+runs as one Vercel Function. The React build is served by a separate Vite service from Vercel's
+CDN. No long-running Express process is required.
 
 ## How the deployment is wired
 
 | Part | Configuration |
 | --- | --- |
-| Install | `npm install` (root dependencies only; Vercel provides Node 20+) |
-| Build | `npm --prefix client install && npm --prefix client run build` |
-| Output | `client/dist` |
-| API | `api/index.js` reuses the existing Express app from `index.js` |
-| API routing | `vercel.json` rewrites `/api/*` to the function |
-| Deep links | every other path rewrites to `/index.html`, so `/patient`, `/doctors/:id` and refreshes work |
+| Install | Per service in `vercel.json`: `npm install` at the root, `npm install` inside `client/` |
+| Build | The Vite service runs `npm run build`; the Express service has no build step |
+| Output | `client/dist`, served by the Vite service |
+| API | The Express service (`index.js`) mounts every route from `routes/api.js` under `/api` |
+| API routing | `vercel.json` rewrites `/api/*` to the Express service, which receives the original `/api/...` path |
+| Deep links | every other path rewrites to the Vite service, whose SPA fallback serves `index.html`, so `/patient`, `/doctors/:id` and refreshes work |
 | Database | cached Mongoose connection in `lib/database.js`, reused across invocations |
-| Static caching | hashed Vite assets are cached for one year |
+
+There is no `api/` functions directory. When `services` is present Vercel ignores `api/`, so the
+Express service is the single API entry point and `/api/*` must keep rewriting to it.
 
 `GET /api/health` stays available even when MongoDB is unreachable. Database-backed endpoints
 return HTTP 503 with a JSON error instead of crashing the function.

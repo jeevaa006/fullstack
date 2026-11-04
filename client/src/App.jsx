@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Activity, ArrowLeft, ArrowRight, CalendarDays, CheckCircle2, Clock3, Eye, EyeOff,
   HeartPulse, Hospital, Info, KeyRound, LockKeyhole, LogOut, MapPin, Menu, Pill, RefreshCw,
   Search, ShieldCheck, Stethoscope, UserRound, X,
 } from 'lucide-react';
-import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
 import PropTypes from 'prop-types';
 import { AuthProvider } from './context/AuthContext';
 import useAuth from './context/useAuth';
@@ -15,6 +13,10 @@ import LanguageSwitcher from './i18n/LanguageSwitcher';
 import useLanguage from './i18n/useLanguage';
 import api, { errorMessage } from './services/api';
 import './App.css';
+
+/* Leaflet, react-leaflet and the map UI live in their own module so the initial
+ * bundle stays small; the chunk is requested only when the hospital map renders. */
+const HospitalMap = lazy(() => import('./components/HospitalMap'));
 
 const DISCLAIMER = 'CareBridge provides general healthcare-support information only. It does not provide a medical diagnosis and is not a replacement for a qualified healthcare professional. In a medical emergency, contact local emergency services immediately.';
 
@@ -1022,86 +1024,6 @@ function HospitalCard({ hospital }) {
 }
 HospitalCard.propTypes = { hospital: PropTypes.object.isRequired };
 
-let nextMapId = 0;
-function MapBounds({ hospitals }) {
-  const map = useMap();
-  useEffect(() => {
-    if (hospitals.length === 1) {
-      const [longitude, latitude] = hospitalCoords(hospitals[0]);
-      map.setView([latitude, longitude], 12);
-    } else if (hospitals.length > 1) {
-      map.fitBounds(hospitals.map((hospital) => { const [longitude, latitude] = hospitalCoords(hospital); return [latitude, longitude]; }), { padding: [24, 24], maxZoom: 12 });
-    }
-  }, [hospitals, map]);
-  return null;
-}
-MapBounds.propTypes = { hospitals: PropTypes.arrayOf(PropTypes.object).isRequired };
-
-function LocationListener({ mapId }) {
-  const map = useMap();
-  useEffect(() => {
-    const move = (event) => map.flyTo(event.detail, Math.max(map.getZoom(), 10));
-    const eventName = `carebridge-map-location-${mapId}`;
-    window.addEventListener(eventName, move);
-    return () => window.removeEventListener(eventName, move);
-  }, [map, mapId]);
-  return null;
-}
-LocationListener.propTypes = { mapId: PropTypes.number.isRequired };
-
-function HospitalMap({ hospitals }) {
-  const { t } = useLanguage();
-  const [mapId] = useState(() => { nextMapId += 1; return nextMapId; });
-  const [locationError, setLocationError] = useState('');
-  const locate = () => {
-    setLocationError('');
-    if (!navigator.geolocation) {
-      setLocationError(t('hospitals.locationUnavailable'));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => window.dispatchEvent(new CustomEvent(`carebridge-map-location-${mapId}`, { detail: [coords.latitude, coords.longitude] })),
-      () => setLocationError(t('hospitals.locationDenied')),
-      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 },
-    );
-  };
-
-  return (
-    <section className="panel map-panel" aria-labelledby="map-heading">
-      <SectionHeader
-        id="map-heading"
-        title={t('hospitals.mapTitle')}
-        description={t('hospitals.mapDescription')}
-        action={<button type="button" className="btn btn-outline btn-sm" onClick={locate}><MapPin size={15} aria-hidden="true" /> {t('hospitals.useMyLocation')}</button>}
-      />
-      {locationError && <p className="muted" role="status">{locationError}</p>}
-      <div className="map-frame">
-        <MapContainer className="hospital-map" center={[11.0168, 76.9558]} zoom={8} scrollWheelZoom={false}>
-          <TileLayer
-            url={import.meta.env.VITE_MAP_TILE_URL || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'}
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
-          />
-          <MapBounds hospitals={hospitals} />
-          {hospitals.map((hospital) => {
-            const [longitude, latitude] = hospitalCoords(hospital);
-            return (
-              <Marker key={hospital._id} position={[latitude, longitude]}>
-                <Popup>
-                  <strong>{hospital.name}</strong><br />{hospital.address}
-                  {hospital.district ? <><br />{hospital.district}</> : null}
-                </Popup>
-              </Marker>
-            );
-          })}
-          <LocationListener mapId={mapId} />
-        </MapContainer>
-      </div>
-      <p className="map-attribution">{t('hospitals.mapAttribution')} <a href="https://operations.osmfoundation.org/policies/tiles/" target="_blank" rel="noopener noreferrer">{t('hospitals.tilePolicy')}</a>.</p>
-    </section>
-  );
-}
-HospitalMap.propTypes = { hospitals: PropTypes.arrayOf(PropTypes.object).isRequired };
-
 function HospitalDirectory() {
   const { t } = useLanguage();
   const [filters, setFilters] = useState({ q: '', district: '', service: '' });
@@ -1126,7 +1048,12 @@ function HospitalDirectory() {
   useEffect(() => { search({ q: '', district: '', service: '' }); }, [search]);
 
   const clear = () => { const empty = { q: '', district: '', service: '' }; setFilters(empty); search(empty); };
-  const mapped = hospitals.filter((hospital) => hospitalCoords(hospital));
+  const mapPoints = useMemo(() => hospitals.flatMap((hospital) => {
+    const coords = hospitalCoords(hospital);
+    if (!coords) return [];
+    const [longitude, latitude] = coords;
+    return [{ id: hospital._id, name: hospital.name, address: hospital.address, district: hospital.district, longitude, latitude }];
+  }), [hospitals]);
 
   return (
     <div className="page">
@@ -1146,7 +1073,11 @@ function HospitalDirectory() {
             <SectionHeader title={t('hospitals.title')} description={hospitals.length === 1 ? t('hospitals.resultOne', { count: hospitals.length }) : t('hospitals.results', { count: hospitals.length })} />
             <div className="card-grid">{hospitals.map((hospital) => <HospitalCard key={hospital._id} hospital={hospital} />)}</div>
           </section>
-          {mapped.length > 0 && <HospitalMap hospitals={mapped} />}
+          {mapPoints.length > 0 && (
+            <Suspense fallback={<div className="panel map-panel" role="status"><Loading label={t('common.loading')} /></div>}>
+              <HospitalMap points={mapPoints} />
+            </Suspense>
+          )}
         </>
       ) : (
         <Empty

@@ -85,4 +85,9 @@ async function start() {
 }
 
 if (require.main === module) start();
-module.exports = { app };
+
+// Export the Express application itself so Vercel's Express service entrypoint finds a
+// handler, and keep the named export used by the integration tests and Node hosts that
+// import { app }.
+module.exports = app;
+module.exports.app = app;
