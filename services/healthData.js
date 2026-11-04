@@ -4,6 +4,8 @@ let nominatimQueue = Promise.resolve();
 let lastNominatimRequest = 0;
 let ncbiQueue = Promise.resolve();
 let lastNcbiRequest = 0;
+let gdeltQueue = Promise.resolve();
+let lastGdeltRequest = 0;
 
 function cacheGet(key) {
   const entry = cache.get(key);
@@ -114,6 +116,16 @@ function mapGdeltArticle(article) {
     : null;
   return { title: article.title.slice(0, 400), publisher: typeof article.domain === 'string' ? article.domain.slice(0, 200) : url.hostname, url: url.toString(), publishedAt, language: typeof article.language === 'string' ? article.language : null, sourceCountry: typeof article.sourcecountry === 'string' ? article.sourcecountry : null, source: 'GDELT DOC 2.0' };
 }
+// GDELT asks clients to send at most one request every five seconds per IP.
+function queueGdeltRequest() {
+  const current = gdeltQueue.then(async () => {
+    const wait = Math.max(0, 5200 - (Date.now() - lastGdeltRequest));
+    if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+    lastGdeltRequest = Date.now();
+  });
+  gdeltQueue = current.catch(() => {});
+  return current;
+}
 async function medicalNews(topic = 'healthcare') {
   if (!Object.hasOwn(NEWS_TOPICS, topic)) throw new Error('Choose a supported news topic.');
   const key = `gdelt:${topic}`;
@@ -122,6 +134,7 @@ async function medicalNews(topic = 'healthcare') {
   const url = new URL('https://api.gdeltproject.org/api/v2/doc/doc');
   url.search = new URLSearchParams({ query: NEWS_TOPICS[topic], mode: 'artlist', format: 'json', sort: 'datedesc', maxrecords: '25', timespan: '7d' }).toString();
   try {
+    await queueGdeltRequest();
     const data = await fetchJson(url, { timeout: 8000, headers: { accept: 'application/json' } });
     if (!Array.isArray(data.articles)) throw new Error('GDELT returned an invalid article response.');
     const deduped = new Map();

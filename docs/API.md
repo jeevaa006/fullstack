@@ -9,6 +9,7 @@ Base path: `/api/v1` (service health endpoints are `/api/health` and `/api/healt
 | `GET /api/health` | Public | `{ "status": "ok" }` while the backend responds; does not imply database readiness |
 | `GET /api/health/db` | Public | Runs a MongoDB ping and returns `{ "status": "ok", "database": "connected" }`; HTTP 503 when disconnected/unusable |
 | `GET /health-information/search?q=diabetes` | Public, rate-limited | Up to 10 safe JSON health-topic records, source attribution, language and cache status; English MedlinePlus only |
+| `POST /health-information/guidance` | Public, rate-limited | `{symptoms}` up to 600 plain-text characters; returns the matched `keywords`, `emergency` warning-sign flag, up to 10 attributed MedlinePlus topics, and `available: false` when the upstream lookup fails. The description is not stored or echoed. |
 
 ## Authentication and account
 

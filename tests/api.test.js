@@ -229,6 +229,25 @@ test('MedlinePlus search validates input, returns attributed safe topics, and ca
   assert.equal(repeated.body.cached, true);
 });
 
+test('symptom guidance matches MedlinePlus topics, flags warning signs and rejects unsafe input', async () => {
+  const guidance = await request(app).post('/api/v1/health-information/guidance').send({ symptoms: 'I have a bad headache and feel dizzy for three days' });
+  assert.equal(guidance.status, 200, JSON.stringify(guidance.body));
+  assert.equal(guidance.body.emergency, false);
+  assert.equal(guidance.body.language, 'en');
+  assert.deepEqual(guidance.body.keywords.slice(0, 2), ['bad', 'headache']);
+  assert.equal(guidance.body.source, 'MedlinePlus.gov');
+  assert.equal(guidance.body.available, true);
+  assert.ok(guidance.body.topics.length > 0, 'live MedlinePlus lookup should return topics for derived keywords');
+  assert.ok(guidance.body.topics.every((topic) => topic.url.startsWith('https://medlineplus.gov/')));
+  assert.ok(guidance.body.topics.every((topic) => !JSON.stringify(topic).includes('headache and feel')));
+  const emergency = await request(app).post('/api/v1/health-information/guidance').send({ symptoms: 'Sudden chest pain and difficulty breathing' });
+  assert.equal(emergency.status, 200);
+  assert.equal(emergency.body.emergency, true);
+  assert.equal((await request(app).post('/api/v1/health-information/guidance').send({ symptoms: '' })).status, 400);
+  assert.equal((await request(app).post('/api/v1/health-information/guidance').send({ symptoms: '<script>alert(1)</script>' })).status, 400);
+  assert.equal((await request(app).post('/api/v1/health-information/guidance').send({ symptoms: 'x'.repeat(601) })).status, 400);
+});
+
 test('hospital coordinate validation accepts GeoJSON order and rejects invalid ranges', async () => {
   const admin = await createAdmin();
   const invalid = await admin.post('/api/v1/admin/hospitals').send({ name: 'Invalid Coordinate Centre', address: 'Test address', district: 'Coimbatore', coordinates: [300, 20] });

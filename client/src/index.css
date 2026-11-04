@@ -1,85 +1,90 @@
+/* ==========================================================================
+   CareBridge design tokens
+   One palette, one type system, one spacing rhythm for every screen.
+   Type is self-hosted so the interface renders identically without network
+   access and stays inside the production CSP (`font-src 'self' data:`).
+   ========================================================================== */
+
 :root {
-  font-family: Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
-  color: var(--text-primary);
-  background: var(--page-background);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  font-optical-sizing: auto;
-  font-weight: 400;
-  font-size: 16px;
-  line-height: 1.55;
-  font-feature-settings: "cv05" on, "cv11" on;
+  /* Type */
+  --font-ui: "Instrument Sans Variable", "Noto Sans Tamil Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-display: "Newsreader Variable", "Noto Sans Tamil Variable", Georgia, "Times New Roman", serif;
 
-  /* Brand ramp — clinical blue with a calmer, deeper ink */
-  --blue-50: #f1f8fe;
-  --blue-100: #eaf4fc;
-  --blue-200: #d5e9f8;
-  --blue-300: #b4d6ef;
-  --blue-500: #1d76b8;
-  --blue-600: #1769aa;
-  --blue-700: #12578d;
-  --blue-800: #123b5d;
-  --blue-900: #0f3554;
+  /* Ink and deep clinical blue */
+  --ink-950: #071b2b;
+  --ink-900: #0b2437;
+  --ink-800: #123248;
+  --ink-700: #22475f;
 
-  --primary-blue: #1769aa;
-  --primary-hover: #115689;
-  --dark-blue: #0f3554;
-  --light-blue: #eaf4fc;
-  --primary-blue-light: #eaf4fc;
-  --blue-primary: #1769aa;
-  --blue-hover: #115689;
-  --blue-dark: #0f3554;
-  --blue-light: #eaf4fc;
+  --blue-900: #0a3550;
+  --blue-800: #0c4766;
+  --blue-700: #0f5580;
+  --blue-600: #146a9c;
+  --blue-400: #4a91bd;
+  --blue-200: #c3dced;
+  --blue-100: #e2eff8;
+  --blue-50: #f0f7fc;
 
-  /* Health accent */
-  --teal: #0d7374;
-  --teal-light: #e6f6f5;
-  --teal-border: #bfe6e4;
-
-  /* Ink and neutrals */
-  --text-primary: #12263f;
-  --text-secondary: #4e6479;
-  --text-muted: #4e6479;
-  --text-placeholder: #63788d;
+  /* Text */
+  --text-primary: #102a3c;
+  --text-secondary: #4d6172;
+  --text-muted: #4d6172;
+  --text-placeholder: #66798a;
 
   /* Feedback */
-  --success: #067647;
-  --success-background: #ecfdf3;
-  --warning: #b54708;
-  --warning-background: #fffaeb;
-  --error: #b42318;
-  --error-background: #fef3f2;
-  --info: #175cd3;
-  --info-background: #eff8ff;
+  --success: #0d6b45;
+  --success-background: #eef6f0;
+  --success-border: #c6e0d3;
+  --warning: #8a4a12;
+  --warning-background: #fbf1e6;
+  --warning-border: #e9d6c0;
+  --error: #a33420;
+  --error-background: #fbece8;
+  --error-border: #efcec6;
+  --info: #1b5a78;
+  --info-background: #edf3f7;
+  --info-border: #cbdde8;
 
   /* Surfaces */
   --surface: #ffffff;
-  --card-background: #ffffff;
-  --surface-secondary: #f6f9fc;
-  --surface-hover: #f8fbfe;
-  --page-background: #f4f8fc;
-  --border: #d9e3ee;
-  --border-strong: #c8d6e5;
-  --primary-border: #d9e3ee;
-  --divider: #e6edf5;
+  --surface-secondary: #f7fafc;
+  --surface-hover: #fafcfe;
+  --surface-inverse: var(--ink-900);
+  --page-background: #f2f6fa;
+  --border: #dce6ee;
+  --border-strong: #c3d2df;
+  --divider: #e9f0f5;
+
+  /* Backwards-compatible brand aliases used across the app */
+  --primary-blue: var(--blue-700);
+  --primary-hover: var(--blue-800);
+  --primary-border: var(--blue-200);
+  --dark-blue: var(--ink-900);
+  --light-blue: var(--blue-50);
+  --blue-primary: var(--blue-700);
+  --blue-hover: var(--blue-800);
+  --blue-dark: var(--ink-900);
+  --blue-light: var(--blue-50);
+  --teal: var(--blue-700);
+  --teal-light: var(--blue-50);
+  --teal-border: var(--blue-200);
 
   /* Focus */
-  --focus-ring: #0b5c98;
-  --focus-halo: rgb(255 255 255 / 85%);
+  --focus-ring: #0f5580;
+  --focus-halo: #ffffff;
 
   /* Shape */
-  --radius-control: 10px;
-  --radius-card: 16px;
-  --radius-panel: 18px;
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-panel: 14px;
   --radius-pill: 999px;
 
-  /* Elevation */
-  --shadow-xs: 0 1px 2px rgb(15 53 84 / 6%);
-  --shadow-card: 0 1px 2px rgb(15 53 84 / 4%), 0 6px 18px -12px rgb(15 53 84 / 18%);
-  --shadow-hover: 0 2px 4px rgb(15 53 84 / 5%), 0 16px 32px -18px rgb(15 53 84 / 26%);
-  --shadow-lg: 0 4px 8px rgb(15 53 84 / 6%), 0 28px 56px -24px rgb(15 53 84 / 30%);
+  /* Elevation — hairline shadows only, no glow */
+  --shadow-xs: 0 1px 1px rgb(11 36 55 / 4%);
+  --shadow-sm: 0 1px 2px rgb(11 36 55 / 7%);
+  --shadow-card: 0 1px 2px rgb(11 36 55 / 6%), 0 1px 1px rgb(11 36 55 / 3%);
+  --shadow-hover: 0 2px 4px rgb(11 36 55 / 6%), 0 10px 20px -16px rgb(11 36 55 / 24%);
+  --shadow-lg: 0 18px 40px -24px rgb(11 36 55 / 32%);
 
   /* Spacing rhythm */
   --space-1: 4px;
@@ -94,28 +99,49 @@
   --space-16: 64px;
 
   /* Motion */
-  --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-standard: cubic-bezier(0.2, 0.6, 0.25, 1);
   --ease-emphasized: cubic-bezier(0.2, 0.72, 0.28, 1);
   --duration-fast: 120ms;
   --duration-base: 180ms;
   --duration-slow: 240ms;
+
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  background: var(--page-background);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 1.58;
+  font-feature-settings: "ss02" on, "cv05" on;
 }
 
 * { box-sizing: border-box; }
-html { min-width: 320px; scroll-behavior: smooth; }
+html { min-width: 320px; scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 body { min-width: 320px; min-height: 100vh; margin: 0; background: var(--page-background); }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 a { color: inherit; }
 #root { min-height: 100vh; display: flex; flex-direction: column; }
 main { flex: 1; min-width: 0; }
-::selection { color: var(--blue-900); background: #bfdbfe; }
-:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+::selection { color: var(--blue-900); background: var(--blue-100); }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 :where(h1, h2, h3) { text-wrap: balance; }
 :where(p) { text-wrap: pretty; }
 
 input::placeholder, textarea::placeholder { color: var(--text-placeholder); opacity: 1; }
+
+/* Tamil glyphs need their own face and slightly more line height than Latin. */
+html:lang(ta) body {
+  font-family: "Noto Sans Tamil Variable", "Instrument Sans Variable", system-ui, sans-serif;
+  line-height: 1.7;
+}
+html:lang(ta) :where(h1, h2, h3) { letter-spacing: 0; line-height: 1.4; }
+html:lang(ta) :where(.eyebrow, .sidebar-label) { letter-spacing: 0.04em; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }

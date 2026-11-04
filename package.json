@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "build": "npm --prefix client run build",
+    "lint": "npm --prefix client run lint",
     "client": "npm --prefix client run dev",
     "server": "nodemon index.js",
     "setup": "npm install && npm --prefix client install",

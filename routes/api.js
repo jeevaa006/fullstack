@@ -148,15 +148,29 @@ router.get('/v1/research', externalDataLimit, async (req, res) => {
   catch (_error) { return res.status(502).json({ error: 'PubMed research is temporarily unavailable.' }); }
 });
 
-router.get('/v1/health-information/search', informationLimit, async (req, res) => {
-  const query = typeof req.query.q === 'string' ? req.query.q.trim().replace(/\s+/g, ' ') : '';
-  if (query.length < 2 || query.length > 100 || /[<>\u0000-\u001f]/.test(query)) return fail(res, 400, 'Search query must contain 2–100 plain-text characters.');
+// Symptom guidance turns a free-text description into a small MedlinePlus topic
+// query. Only derived keywords leave the server; the description itself is never
+// stored, echoed back or forwarded.
+const SYMPTOM_STOPWORDS = new Set(['about', 'after', 'again', 'also', 'always', 'and', 'any', 'are', 'around', 'because', 'been', 'before', 'being', 'both', 'but', 'can', 'cannot', 'could', 'day', 'days', 'did', 'does', 'doing', 'down', 'during', 'each', 'even', 'ever', 'every', 'feel', 'feels', 'felt', 'few', 'for', 'from', 'get', 'gets', 'getting', 'had', 'has', 'have', 'having', 'her', 'here', 'him', 'his', 'how', 'into', 'its', 'just', 'last', 'less', 'like', 'little', 'lot', 'made', 'make', 'many', 'may', 'might', 'more', 'most', 'much', 'must', 'my', 'near', 'need', 'never', 'new', 'night', 'not', 'now', 'off', 'often', 'once', 'one', 'only', 'other', 'our', 'out', 'over', 'own', 'past', 'really', 'same', 'she', 'should', 'since', 'some', 'still', 'such', 'take', 'than', 'that', 'the', 'their', 'them', 'then', 'there', 'these', 'they', 'thing', 'things', 'think', 'this', 'those', 'through', 'time', 'today', 'too', 'under', 'until', 'very', 'want', 'was', 'way', 'week', 'weeks', 'well', 'were', 'what', 'when', 'where', 'which', 'while', 'who', 'why', 'will', 'with', 'without', 'would', 'you', 'your']);
+const SYMPTOM_WARNING_TERMS = ['chest pain', 'chest tightness', 'difficulty breathing', 'cannot breathe', "can't breathe", 'shortness of breath', 'unconscious', 'severe bleeding', 'stroke', 'seizure', 'suicidal', 'overdose'];
+function symptomKeywords(text) {
+  const words = text.toLocaleLowerCase('en').replace(/[^a-z0-9\s'-]/g, ' ').split(/\s+/)
+    .map((word) => word.replace(/^['-]+|['-]+$/g, ''))
+    .filter((word) => word.length >= 3 && word.length <= 30 && !SYMPTOM_STOPWORDS.has(word));
+  return [...new Set(words)].slice(0, 5);
+}
+function cacheHealthTopics(cacheKey, payload) {
+  if (healthTopicCache.size >= 1000) {
+    for (const [key, entry] of healthTopicCache) if (entry.expiresAt <= Date.now()) healthTopicCache.delete(key);
+    if (healthTopicCache.size >= 1000) healthTopicCache.delete(healthTopicCache.keys().next().value);
+  }
+  healthTopicCache.set(cacheKey, { payload, expiresAt: Date.now() + 18 * 60 * 60 * 1000 });
+}
+async function searchHealthTopics(query) {
   const cacheKey = query.toLocaleLowerCase('en');
   const cached = healthTopicCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return res.json({ ...cached.payload, cached: true });
-  const useStaleCache = () => cached && cached.expiresAt + 48 * 60 * 60 * 1000 > Date.now()
-    ? res.json({ ...cached.payload, cached: true, stale: true })
-    : null;
+  if (cached && cached.expiresAt > Date.now()) return { payload: cached.payload, cached: true };
+  const stale = cached && cached.expiresAt + 48 * 60 * 60 * 1000 > Date.now() ? cached : null;
   const url = new URL('https://wsearch.nlm.nih.gov/ws/query');
   url.search = new URLSearchParams({ db: 'healthTopics', term: query, retmax: '10', rettype: 'topic', tool: 'carebridge' }).toString();
   const controller = new AbortController();
@@ -164,26 +178,64 @@ router.get('/v1/health-information/search', informationLimit, async (req, res) =
   try {
     const response = await fetch(url, { headers: { accept: 'application/xml, text/xml' }, signal: controller.signal });
     if (!response.ok) {
-      const staleResponse = useStaleCache();
-      if (staleResponse) return staleResponse;
-      return res.status(response.status === 429 ? 503 : 502).json({ error: response.status === 429 ? 'MedlinePlus is temporarily rate limited. Try again later.' : 'Health information is temporarily unavailable.' });
+      const error = new Error('Health information is temporarily unavailable.');
+      error.status = response.status === 429 ? 503 : 502;
+      error.code = response.status === 429 ? 'RATE_LIMITED' : 'UPSTREAM_ERROR';
+      throw error;
     }
     const xml = await response.text();
-    if (xml.length > 2_000_000 || /<!DOCTYPE|<!ENTITY/i.test(xml) || !XMLValidator.validate(xml)) return fail(res, 502, 'Health information returned an invalid response.');
+    if (xml.length > 2_000_000 || /<!DOCTYPE|<!ENTITY/i.test(xml) || !XMLValidator.validate(xml)) {
+      const error = new Error('Health information returned an invalid response.');
+      error.status = 502;
+      error.code = 'INVALID_RESPONSE';
+      throw error;
+    }
     const parsed = xmlParser.parse(xml);
     const topics = findDocuments(parsed).map(mapHealthTopic).filter(Boolean).slice(0, 10);
     const payload = { query, topics, source: 'MedlinePlus.gov', attribution: 'Health information from MedlinePlus.gov. MedlinePlus does not endorse CareBridge.', language: 'en', updated: 'MedlinePlus updates this service Tuesday–Saturday.' };
-    if (healthTopicCache.size >= 1000) {
-      for (const [key, entry] of healthTopicCache) if (entry.expiresAt <= Date.now()) healthTopicCache.delete(key);
-      if (healthTopicCache.size >= 1000) healthTopicCache.delete(healthTopicCache.keys().next().value);
-    }
-    healthTopicCache.set(cacheKey, { payload, expiresAt: Date.now() + 18 * 60 * 60 * 1000 });
-    return res.json({ ...payload, cached: false });
+    cacheHealthTopics(cacheKey, payload);
+    return { payload, cached: false };
   } catch (error) {
-    const staleResponse = useStaleCache();
-    if (staleResponse) return staleResponse;
-    return res.status(error.name === 'AbortError' ? 504 : 502).json({ error: error.name === 'AbortError' ? 'Health information search timed out. Try again later.' : 'Health information is temporarily unavailable.' });
+    if (stale) return { payload: stale.payload, cached: true, stale: true };
+    throw error;
   } finally { clearTimeout(timeout); }
+}
+
+router.get('/v1/health-information/search', informationLimit, async (req, res) => {
+  const query = typeof req.query.q === 'string' ? req.query.q.trim().replace(/\s+/g, ' ') : '';
+  if (query.length < 2 || query.length > 100 || /[<>\u0000-\u001f]/.test(query)) return fail(res, 400, 'Search query must contain 2–100 plain-text characters.');
+  try {
+    const result = await searchHealthTopics(query);
+    res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
+    return res.json({ ...result.payload, cached: result.cached, ...(result.stale ? { stale: true } : {}) });
+  } catch (error) {
+    if (error.name === 'AbortError') return fail(res, 504, 'Health information search timed out. Try again later.');
+    if (error.code === 'RATE_LIMITED') return fail(res, 503, 'MedlinePlus is temporarily rate limited. Try again later.');
+    if (error.code === 'INVALID_RESPONSE') return fail(res, 502, 'Health information returned an invalid response.');
+    return fail(res, 502, 'Health information is temporarily unavailable.');
+  }
+});
+
+// Educational symptom guidance: keywords are matched against MedlinePlus and the
+// response always states that this is not a diagnosis. Warning signs are flagged
+// server-side so the client can surface emergency advice even if the lookup fails.
+router.post('/v1/health-information/guidance', informationLimit, async (req, res) => {
+  const symptoms = typeof req.body?.symptoms === 'string' ? req.body.symptoms.trim().replace(/\s+/g, ' ') : '';
+  if (!symptoms) return fail(res, 400, 'Describe what you are experiencing (up to 600 characters).');
+  if (symptoms.length > 600) return fail(res, 400, 'Keep the description to 600 characters or fewer.');
+  if (/[<>\u0000-\u001f]/.test(symptoms)) return fail(res, 400, 'Use plain text only.');
+  const lowered = symptoms.toLocaleLowerCase('en');
+  const emergency = SYMPTOM_WARNING_TERMS.some((term) => lowered.includes(term));
+  const keywords = symptomKeywords(symptoms);
+  const base = { emergency, keywords, source: 'MedlinePlus.gov', attribution: 'Health information from MedlinePlus.gov. MedlinePlus does not endorse CareBridge.', language: 'en', note: 'Educational information only. This is not a diagnosis or triage.' };
+  if (!keywords.length) return res.json({ ...base, query: '', topics: [], available: true, message: 'MedlinePlus health topics are indexed in English. Describe the symptom in English to see related topics.' });
+  const query = keywords.join(' OR ');
+  try {
+    const result = await searchHealthTopics(query);
+    return res.json({ ...base, query, topics: result.payload.topics, updated: result.payload.updated, cached: result.cached, stale: Boolean(result.stale), available: true });
+  } catch (error) {
+    return res.json({ ...base, query, topics: [], cached: false, available: false, message: error.name === 'AbortError' ? 'The MedlinePlus lookup timed out. Try again later.' : 'MedlinePlus health topics are temporarily unavailable.' });
+  }
 });
 
 router.post('/v1/auth/register/patient', authLimit, async (req, res, next) => {

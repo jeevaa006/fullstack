@@ -4,7 +4,7 @@
 
 CareBridge uses the existing Express authentication API, MongoDB user records and signed JWT session cookie. Passwords are hashed with bcryptjs at persistence and never placed in browser storage. The JWT is stored in an `HttpOnly`, `SameSite=Lax` cookie; production cookies set `Secure`. The client restores the session with `GET /api/v1/auth/me` during application startup and renders a loading state until that request settles. A private page is not rendered while the session status is unknown.
 
-The interface is English-only. Accounts are created with an email/password form and sign in with a password.
+The patient-facing interface is available in English and Tamil, with the choice stored in the browser and a language selector on both the sign-in card and the authenticated header. Accounts are created with an email/password form and sign in with a password; administrator and clinical-review screens remain in English.
 
 Use the API endpoints below; the backend reloads the active account on protected requests, so client-side role/state edits do not grant access:
 

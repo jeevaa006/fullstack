@@ -10,10 +10,26 @@ import 'leaflet/dist/leaflet.css';
 import PropTypes from 'prop-types';
 import { AuthProvider } from './context/AuthContext';
 import useAuth from './context/useAuth';
+import { LanguageProvider } from './i18n/LanguageProvider';
+import LanguageSwitcher from './i18n/LanguageSwitcher';
+import useLanguage from './i18n/useLanguage';
 import api, { errorMessage } from './services/api';
 import './App.css';
 
 const DISCLAIMER = 'CareBridge provides general healthcare-support information only. It does not provide a medical diagnosis and is not a replacement for a qualified healthcare professional. In a medical emergency, contact local emergency services immediately.';
+
+/* A bridge arch carrying a medical cross: one mark, used at every size. */
+function BrandMark({ size = 17 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+      <path d="M3 20.5v-9a9 9 0 0 1 18 0v9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M2 20.5h20" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M12 11v6.5M8.75 14.25h6.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+BrandMark.propTypes = { size: PropTypes.number };
+
 
 /* ------------------------------------------------------------------ */
 /* Shared helpers                                                      */
@@ -145,17 +161,19 @@ Field.propTypes = {
 };
 
 function Alert({ tone = 'info', children, onRetry }) {
+  const { t } = useLanguage();
   return (
     <div className={`alert alert-${tone}`} role={tone === 'error' ? 'alert' : 'status'}>
       <span className="alert-text">{children}</span>
-      {onRetry && <button type="button" className="btn btn-ghost btn-sm" onClick={onRetry}><RefreshCw size={14} /> Try again</button>}
+      {onRetry && <button type="button" className="btn btn-ghost btn-sm" onClick={onRetry}><RefreshCw size={14} aria-hidden="true" /> {t('common.tryAgain')}</button>}
     </div>
   );
 }
 Alert.propTypes = { tone: PropTypes.string, children: PropTypes.node.isRequired, onRetry: PropTypes.func };
 
-function Loading({ label = 'Loading…' }) {
-  return <div className="loading-block" role="status"><span className="spinner" aria-hidden="true" />{label}</div>;
+function Loading({ label }) {
+  const { t } = useLanguage();
+  return <div className="loading-block" role="status"><span className="spinner" aria-hidden="true" />{label || t('common.loading')}</div>;
 }
 Loading.propTypes = { label: PropTypes.string };
 
@@ -174,20 +192,25 @@ function Empty({ icon, title, text, action }) {
 Empty.propTypes = { icon: PropTypes.node, title: PropTypes.string.isRequired, text: PropTypes.string, action: PropTypes.node };
 
 function StatusBadge({ status, label }) {
+  const { t } = useLanguage();
   const tone = STATUS_TONE[status] || 'muted';
-  return <span className={`status-badge tone-${tone}`}><span className="status-dot" aria-hidden="true" />{label || STATUS_LABEL[status] || status}</span>;
+  const key = `status.${status}`;
+  const translated = t(key);
+  const text = label || (translated === key ? STATUS_LABEL[status] || status : translated);
+  return <span className={`status-badge tone-${tone}`}><span className="status-dot" aria-hidden="true" />{text}</span>;
 }
 StatusBadge.propTypes = { status: PropTypes.string.isRequired, label: PropTypes.string };
 
-function SearchForm({ children, onSubmit, onClear, busy, submitLabel = 'Search', id }) {
+function SearchForm({ children, onSubmit, onClear, busy, submitLabel, id }) {
+  const { t } = useLanguage();
   return (
     <form className="panel search-panel" onSubmit={onSubmit} role="search" aria-label={id}>
       <div className="search-grid">{children}</div>
       <div className="search-actions">
         <button type="submit" className="btn btn-primary" disabled={busy}>
-          <Search size={16} aria-hidden="true" /> {busy ? 'Searching…' : submitLabel}
+          <Search size={16} aria-hidden="true" /> {busy ? t('common.searching') : submitLabel || t('common.search')}
         </button>
-        {onClear && <button type="button" className="btn btn-outline" onClick={onClear}>Clear filters</button>}
+        {onClear && <button type="button" className="btn btn-outline" onClick={onClear}>{t('common.clearFilters')}</button>}
       </div>
     </form>
   );
@@ -207,33 +230,36 @@ SearchForm.propTypes = {
 
 const NAV_LINKS = {
   patient: [
-    { to: '/patient', label: 'Overview', icon: Activity, end: true },
-    { to: '/doctors', label: 'Find a doctor', icon: Search },
-    { to: '/hospitals', label: 'Hospitals', icon: Hospital },
-    { to: '/patient/appointments', label: 'Appointments', icon: CalendarDays },
-    { to: '/patient/reminders', label: 'Medicine reminders', icon: Pill },
-    { to: '/patient/guidance', label: 'Health guidance', icon: HeartPulse },
-    { to: '/patient/profile', label: 'My profile', icon: UserRound },
+    { to: '/patient', labelKey: 'nav.overview', icon: Activity, end: true },
+    { to: '/doctors', labelKey: 'nav.findDoctor', icon: Search },
+    { to: '/hospitals', labelKey: 'nav.hospitals', icon: Hospital },
+    { to: '/patient/services', labelKey: 'nav.services', icon: HeartPulse },
+    { to: '/patient/appointments', labelKey: 'nav.appointments', icon: CalendarDays },
+    { to: '/patient/reminders', labelKey: 'nav.reminders', icon: Pill },
+    { to: '/patient/guidance', labelKey: 'nav.guidance', icon: Info },
+    { to: '/patient/profile', labelKey: 'nav.profile', icon: UserRound },
+    { to: '/help', labelKey: 'nav.help', icon: Info },
   ],
   doctor: [
-    { to: '/doctor', label: 'Dashboard', icon: Activity, end: true },
-    { to: '/doctor/profile', label: 'My profile', icon: UserRound },
-    { to: '/doctor/availability', label: 'Availability', icon: CalendarDays },
-    { to: '/doctor/appointments', label: 'Appointment requests', icon: CheckCircle2 },
-    { to: '/doctor/history', label: 'Appointment history', icon: Clock3 },
+    { to: '/doctor', labelKey: 'nav.dashboard', icon: Activity, end: true },
+    { to: '/doctor/profile', labelKey: 'nav.doctorProfile', icon: UserRound },
+    { to: '/doctor/availability', labelKey: 'nav.availability', icon: CalendarDays },
+    { to: '/doctor/appointments', labelKey: 'nav.requests', icon: CheckCircle2 },
+    { to: '/doctor/history', labelKey: 'nav.history', icon: Clock3 },
   ],
   admin: [
-    { to: '/admin', label: 'Dashboard', icon: Activity, end: true },
-    { to: '/admin/users', label: 'User management', icon: UserRound },
-    { to: '/admin/doctors', label: 'Doctor verification', icon: ShieldCheck },
-    { to: '/admin/appointments', label: 'Appointment management', icon: CalendarDays },
-    { to: '/admin/hospitals', label: 'Hospital management', icon: Hospital },
-    { to: '/admin/statistics', label: 'Platform statistics', icon: Activity },
+    { to: '/admin', labelKey: 'nav.dashboard', icon: Activity, end: true },
+    { to: '/admin/users', labelKey: 'nav.users', icon: UserRound },
+    { to: '/admin/doctors', labelKey: 'nav.verification', icon: ShieldCheck },
+    { to: '/admin/appointments', labelKey: 'nav.adminAppointments', icon: CalendarDays },
+    { to: '/admin/hospitals', labelKey: 'nav.hospitalManagement', icon: Hospital },
+    { to: '/admin/statistics', labelKey: 'nav.statistics', icon: Activity },
   ],
 };
 
 function AppShell() {
   const { user, loading, logout } = useAuth();
+  const { t } = useLanguage();
   const location = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const mobileNavId = 'primary-navigation';
@@ -257,6 +283,7 @@ function AppShell() {
       <Route path="/login" element={user ? <Navigate to={`/${user.role}`} replace /> : <AuthPage />} />
       <Route path="/register" element={user ? <Navigate to={`/${user.role}`} replace /> : <AuthPage register />} />
       <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/help" element={<HelpPage />} />
       <Route path="/about" element={<Protected><AboutPage /></Protected>} />
       <Route path="/doctors" element={<Protected><DoctorDirectory /></Protected>} />
       <Route path="/doctors/:id" element={<Protected><DoctorDetail /></Protected>} />
@@ -265,12 +292,12 @@ function AppShell() {
       <Route path="/doctor/*" element={<Protected roles={['doctor']}><DoctorArea /></Protected>} />
       <Route path="/admin/*" element={<Protected roles={['admin']}><AdminArea /></Protected>} />
       <Route path="/access-denied" element={<MessagePage title="Access denied" body="This page is not available to your account. Sign in with an account that has the right role." />} />
-      <Route path="*" element={user ? <MessagePage title="Page not found" body="The page you requested could not be found." /> : <Navigate to="/login" replace />} />
+      <Route path="*" element={<NotFoundPage signedIn={Boolean(user)} />} />
     </Routes>
   );
 
   if (loading) {
-    return <div className="boot-screen"><span className="spinner" aria-hidden="true" /><p>Loading CareBridge…</p></div>;
+    return <div className="boot-screen"><span className="spinner" aria-hidden="true" /><p>{t('common.loading')}</p></div>;
   }
 
   if (!user) {
@@ -278,12 +305,14 @@ function AppShell() {
     if (bareAuthRoute) return <div className="public-shell">{routes}</div>;
     return (
       <div className="public-shell">
-        <a className="skip-link" href="#main-content">Skip to main content</a>
+        <a className="skip-link" href="#main-content">{t('common.skipToContent')}</a>
         <header className="app-header public-header">
-          <Link className="brand" to="/login"><span className="brand-mark"><HeartPulse size={18} aria-hidden="true" /></span><span className="brand-name">CareBridge</span></Link>
+          <Link className="brand" to="/login"><span className="brand-mark"><BrandMark /></span><span className="brand-name">CareBridge</span></Link>
           <div className="header-actions">
-            <Link className="btn btn-outline btn-sm" to="/login">Log in</Link>
-            <Link className="btn btn-primary btn-sm" to="/register">Register</Link>
+            <Link className="btn btn-ghost btn-sm public-help-link" to="/help">{t('common.help')}</Link>
+            <LanguageSwitcher compact />
+            <Link className="btn btn-outline btn-sm" to="/login">{t('common.logIn')}</Link>
+            <Link className="btn btn-primary btn-sm" to="/register">{t('common.register')}</Link>
           </div>
         </header>
         <main className="public-main" id="main-content" tabIndex={-1}>{routes}</main>
@@ -307,19 +336,20 @@ function AppShell() {
           {mobileNavOpen ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}
         </button>
         <Link className="brand" to={`/${user.role}`}>
-          <span className="brand-mark"><HeartPulse size={18} aria-hidden="true" /></span>
+          <span className="brand-mark"><BrandMark /></span>
           <span className="brand-name">CareBridge</span>
         </Link>
         <div className="header-actions">
+          <LanguageSwitcher compact />
           <div className="account-chip">
             <span className="account-avatar" aria-hidden="true">{initials(user.name)}</span>
             <span className="account-text">
               <span className="account-name">{user.name}</span>
-              <span className="account-role">{ROLE_LABEL[user.role] || user.role}</span>
+              <span className="account-role">{t(`roles.${user.role}`)}</span>
             </span>
           </div>
-          <button type="button" className="btn btn-outline btn-sm logout-button" onClick={logoutAndRedirect}>
-            <LogOut size={15} aria-hidden="true" /><span className="logout-label">Log out</span>
+          <button type="button" className="btn btn-outline btn-sm logout-button" onClick={logoutAndRedirect} aria-label={t('common.logOut')}>
+            <LogOut size={15} aria-hidden="true" /><span className="logout-label">{t('common.logOut')}</span>
           </button>
         </div>
       </header>
@@ -337,22 +367,23 @@ function AppShell() {
 }
 
 function Sidebar({ user, pathname, id, open, onNavigate }) {
+  const { t } = useLanguage();
   const links = NAV_LINKS[user.role] || [];
   return (
-    <aside id={id} className={`app-sidebar${open ? ' is-open' : ''}`} aria-label={`${ROLE_LABEL[user.role]} navigation`}>
-      <p className="sidebar-label">{ROLE_LABEL[user.role]} workspace</p>
+    <aside id={id} className={`app-sidebar${open ? ' is-open' : ''}`} aria-label={t('nav.workspace', { role: t(`roles.${user.role}`) })}>
+      <p className="sidebar-label">{t('nav.workspace', { role: t(`roles.${user.role}`) })}</p>
       <nav>
-        {links.map(({ to, label, icon: Icon, end }) => {
+        {links.map(({ to, labelKey, icon: Icon, end }) => {
           const active = end ? pathname === to : pathname === to || pathname.startsWith(`${to}/`);
           return (
             <Link key={to} to={to} className={`nav-link${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined} onClick={onNavigate}>
               <Icon size={18} aria-hidden="true" />
-              <span>{label}</span>
+              <span>{t(labelKey)}</span>
             </Link>
           );
         })}
       </nav>
-      <p className="sidebar-note">CareBridge supports access to care. It does not provide a diagnosis.</p>
+      <p className="sidebar-note">{t('common.medicalNote')}</p>
     </aside>
   );
 }
@@ -365,13 +396,15 @@ Sidebar.propTypes = {
 };
 
 function AppFooter() {
+  const { t } = useLanguage();
   return (
     <footer className="app-footer">
-      <p>CareBridge · Healthcare access, closer to home.</p>
+      <p>{t('common.footerTagline')}</p>
       <p className="footer-meta">
-        Kumaraguru College of Technology · Academic project
-        <span aria-hidden="true"> · </span><Link to="/about">About</Link>
-        <span aria-hidden="true"> · </span><Link to="/privacy">Privacy</Link>
+        {t('common.footerMeta')}
+        <span aria-hidden="true"> · </span><Link to="/about">{t('common.about')}</Link>
+        <span aria-hidden="true"> · </span><Link to="/help">{t('common.help')}</Link>
+        <span aria-hidden="true"> · </span><Link to="/privacy">{t('common.privacy')}</Link>
       </p>
     </footer>
   );
@@ -405,6 +438,7 @@ function AuthPage({ register = false }) {
   const [params] = useSearchParams();
   const currentLocation = useLocation();
   const { login, register: createAccount } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [role, setRole] = useState(params.get('role') === 'doctor' ? 'doctor' : 'patient');
   const [form, setForm] = useState({ name: '', email: '', password: '', phone: '', specialization: '', qualification: '', experienceYears: '', consultationFee: '', hospital: '', district: '', biography: '' });
@@ -419,9 +453,14 @@ function AuthPage({ register = false }) {
   const submit = async (event) => {
     event.preventDefault();
     setError('');
+    const email = form.email.trim();
+    if (register && form.name.trim().length < 2) return setError(t('validation.nameLength'));
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setError(t('validation.email'));
+    if (form.password.length < 8) return setError(t('validation.passwordLength'));
+    if (register && role === 'doctor' && (!form.specialization.trim() || !form.qualification.trim() || !form.district.trim())) return setError(t('validation.required'));
     setBusy(true);
     try {
-      const account = register ? await createAccount(role, form) : await login({ email: form.email, password: form.password });
+      const account = register ? await createAccount(role, form) : await login({ email, password: form.password });
       navigate(safeRedirect(account, currentLocation), { replace: true });
     } catch (err) {
       setError(errorMessage(err));
@@ -434,43 +473,44 @@ function AuthPage({ register = false }) {
     <div className="auth-shell">
       <section className="auth-aside" aria-hidden="true">
         <div className="auth-aside-brand">
-          <span className="brand-mark brand-mark-lg"><HeartPulse size={24} /></span>
+          <span className="brand-mark brand-mark-lg"><BrandMark size={24} /></span>
           <span>CareBridge</span>
         </div>
-        <h2>Healthcare access, closer to home.</h2>
-        <p>Find verified doctors, published healthcare centres and keep your appointments in one calm, accessible place.</p>
+        <h2>{t('auth.asideTitle')}</h2>
+        <p>{t('auth.asideText')}</p>
         <ul className="auth-points">
-          <li><ShieldCheck size={18} /> Administrator-reviewed doctor profiles</li>
-          <li><CalendarDays size={18} /> Appointment requests with clear status</li>
-          <li><KeyRound size={18} /> Secure password sign-in with role-based access</li>
+          <li><ShieldCheck size={18} /> {t('auth.asidePoint1')}</li>
+          <li><CalendarDays size={18} /> {t('auth.asidePoint2')}</li>
+          <li><KeyRound size={18} /> {t('auth.asidePoint3')}</li>
         </ul>
       </section>
 
       <section className="auth-card">
+        <div className="auth-topbar"><LanguageSwitcher compact /></div>
         <div className="auth-heading">
           <p className="eyebrow">CareBridge</p>
-          <h1>{register ? 'Create your account' : 'Welcome back'}</h1>
-          <p>{register ? 'Register as a patient or apply as a doctor.' : 'Sign in to continue to your workspace.'}</p>
+          <h1>{register ? t('auth.registerTitle') : t('auth.signInTitle')}</h1>
+          <p>{register ? t('auth.registerSubtitle') : t('auth.signInSubtitle')}</p>
         </div>
 
         {error && <Alert tone="error">{error}</Alert>}
 
-        <form onSubmit={submit} className="auth-form">
+        <form onSubmit={submit} className="auth-form" noValidate>
           {register && (
             <>
-              <div className="role-switch" role="group" aria-label="Account type">
-                <button type="button" className={role === 'patient' ? 'active' : ''} aria-pressed={role === 'patient'} onClick={() => setRole('patient')}>Patient</button>
-                <button type="button" className={role === 'doctor' ? 'active' : ''} aria-pressed={role === 'doctor'} onClick={() => setRole('doctor')}>Doctor</button>
+              <div className="role-switch" role="group" aria-label={t('auth.accountType')}>
+                <button type="button" className={role === 'patient' ? 'active' : ''} aria-pressed={role === 'patient'} onClick={() => setRole('patient')}>{t('roles.patient')}</button>
+                <button type="button" className={role === 'doctor' ? 'active' : ''} aria-pressed={role === 'doctor'} onClick={() => setRole('doctor')}>{t('roles.doctor')}</button>
               </div>
-              <Field label="Full name" required value={form.name} onChange={change('name')} placeholder="Your name" autoComplete="name" />
-              <Field label="Phone number (optional)" value={form.phone} onChange={change('phone')} placeholder="Contact number" autoComplete="tel" />
+              <Field label={t('auth.fullName')} required value={form.name} onChange={change('name')} placeholder={t('auth.fullNamePlaceholder')} autoComplete="name" />
+              <Field label={t('auth.phoneOptional')} value={form.phone} onChange={change('phone')} placeholder={t('auth.phonePlaceholder')} autoComplete="tel" />
             </>
           )}
 
-          <Field label="Email address" type="email" required value={form.email} onChange={change('email')} placeholder="you@example.com" autoComplete="email" />
+          <Field label={t('auth.email')} type="email" required value={form.email} onChange={change('email')} placeholder={t('auth.emailPlaceholder')} autoComplete="email" />
 
           <div className="field">
-              <label htmlFor="auth-password">Password <span className="required-mark" aria-hidden="true">*</span></label>
+              <label htmlFor="auth-password">{t('auth.password')} <span className="required-mark" aria-hidden="true">*</span></label>
               <div className="password-control">
                 <input
                   id="auth-password"
@@ -481,12 +521,12 @@ function AuthPage({ register = false }) {
                   autoComplete={register ? 'new-password' : 'current-password'}
                   value={form.password}
                   onChange={(event) => change('password')(event.target.value)}
-                  placeholder="At least 8 characters"
+                  placeholder={t('auth.passwordPlaceholder')}
                 />
                 <button
                   type="button"
                   className="password-toggle"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                   aria-pressed={showPassword}
                   onClick={() => setShowPassword((visible) => !visible)}
                 >
@@ -498,29 +538,29 @@ function AuthPage({ register = false }) {
           {register && role === 'doctor' && (
             <>
               <div className="form-grid">
-                <Field label="Specialization" required value={form.specialization} onChange={change('specialization')} placeholder="e.g. General medicine" />
-                <Field label="Qualification" required value={form.qualification} onChange={change('qualification')} placeholder="e.g. MBBS" />
-                <Field label="Years of experience" type="number" min="0" required value={form.experienceYears} onChange={change('experienceYears')} />
-                <Field label="Consultation fee (₹)" type="number" min="0" required value={form.consultationFee} onChange={change('consultationFee')} />
-                <Field label="District" required value={form.district} onChange={change('district')} placeholder="Practice district" />
-                <Field label="Hospital affiliation (optional)" value={form.hospital} onChange={change('hospital')} placeholder="Hospital or centre" />
+                <Field label={t('auth.specialization')} required value={form.specialization} onChange={change('specialization')} placeholder={t('auth.specializationPlaceholder')} />
+                <Field label={t('auth.qualification')} required value={form.qualification} onChange={change('qualification')} placeholder={t('auth.qualificationPlaceholder')} />
+                <Field label={t('auth.experienceYears')} type="number" min="0" required value={form.experienceYears} onChange={change('experienceYears')} />
+                <Field label={t('auth.consultationFee')} type="number" min="0" required value={form.consultationFee} onChange={change('consultationFee')} />
+                <Field label={t('auth.district')} required value={form.district} onChange={change('district')} placeholder={t('auth.districtPlaceholder')} />
+                <Field label={t('auth.hospitalAffiliation')} value={form.hospital} onChange={change('hospital')} placeholder={t('auth.hospitalPlaceholder')} />
               </div>
-              <Alert tone="info">New doctor profiles stay pending until an administrator reviews them. Do not submit credentials you cannot evidence.</Alert>
+              <Alert tone="info">{t('auth.pendingNotice')}</Alert>
             </>
           )}
 
           <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
             {busy && <span className="spinner spinner-light" aria-hidden="true" />}
-            {busy ? 'Please wait…' : register ? 'Create account' : 'Sign in'}
+            {busy ? t('auth.submitting') : register ? t('auth.submitRegister') : t('auth.submitLogin')}
           </button>
         </form>
 
         <div className="auth-links">
           {register
-            ? <Link to="/login">Already have an account? Sign in</Link>
-            : <><Link to="/register?role=patient">Create a patient account</Link><span aria-hidden="true">·</span><Link to="/register?role=doctor">Apply as a doctor</Link></>}
+            ? <Link to="/login">{t('auth.haveAccount')}</Link>
+            : <><Link to="/register?role=patient">{t('auth.createPatient')}</Link><span aria-hidden="true">·</span><Link to="/register?role=doctor">{t('auth.applyDoctor')}</Link></>}
         </div>
-        <p className="auth-disclaimer">CareBridge is an academic demonstration and not a certified clinical service. In an emergency, contact local emergency services.</p>
+        <p className="auth-disclaimer">{t('auth.demoNotice')}</p>
       </section>
     </div>
   );
@@ -572,11 +612,76 @@ function PrivacyPage() {
   );
 }
 
+function HelpPage() {
+  const { t, dictionary } = useLanguage();
+  return (
+    <div className="page page-narrow">
+      <PageHeader eyebrow={t('help.eyebrow')} title={t('help.title')} description={t('help.description')} />
+
+      <section className="panel emergency-panel" aria-labelledby="emergency-heading">
+        <span className="emergency-icon" aria-hidden="true"><HeartPulse size={20} /></span>
+        <div>
+          <h2 id="emergency-heading">{t('help.emergencyTitle')}</h2>
+          <p>{t('help.emergencyText')}</p>
+        </div>
+      </section>
+
+      <section className="panel" aria-labelledby="faq-heading">
+        <SectionHeader id="faq-heading" title={t('help.faqTitle')} />
+        <div className="faq-list">
+          {dictionary.help.faq.map((item) => (
+            <details className="faq-item" key={item.q}>
+              <summary>{item.q}</summary>
+              <p>{item.a}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <div className="split-2">
+        <section className="panel">
+          <h2 className="panel-title">{t('help.privacyTitle')}</h2>
+          <p>{t('help.privacyText')}</p>
+          <Link className="text-link" to="/privacy">{t('help.privacyLink')} <ArrowRight size={14} aria-hidden="true" /></Link>
+        </section>
+        <section className="panel">
+          <h2 className="panel-title">{t('help.contactTitle')}</h2>
+          <p>{t('help.contactText')}</p>
+        </section>
+      </div>
+
+      <section className="panel prose" aria-labelledby="medical-disclaimer-heading">
+        <h2 id="medical-disclaimer-heading">{t('help.disclaimerTitle')}</h2>
+        <p>{t('common.disclaimer')}</p>
+      </section>
+    </div>
+  );
+}
+
+function NotFoundPage({ signedIn }) {
+  const { t } = useLanguage();
+  return (
+    <div className="page page-narrow">
+      <div className="panel not-found-panel">
+        <span className="empty-icon" aria-hidden="true"><Info size={20} /></span>
+        <h1>{t('notFound.title')}</h1>
+        <p>{t('notFound.text')}</p>
+        <div className="not-found-actions">
+          <Link className="btn btn-primary" to={signedIn ? '/' : '/login'}>{signedIn ? t('notFound.goHome') : t('notFound.goLogin')}</Link>
+          <Link className="btn btn-outline" to="/help">{t('notFound.help')}</Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+NotFoundPage.propTypes = { signedIn: PropTypes.bool };
+
 /* ------------------------------------------------------------------ */
 /* Doctor discovery                                                    */
 /* ------------------------------------------------------------------ */
 
 function DoctorCard({ doctor }) {
+  const { t } = useLanguage();
   const id = doctorIdentifier(doctor);
   const name = doctorName(doctor);
   const content = (
@@ -585,22 +690,22 @@ function DoctorCard({ doctor }) {
         <span className="avatar" aria-hidden="true">{initials(name)}</span>
         <div className="card-head-text">
           <h3>{name}</h3>
-          <p className="card-specialty"><Stethoscope size={14} aria-hidden="true" /> {doctor.specialization || 'Specialization not listed'}</p>
+          <p className="card-specialty"><Stethoscope size={14} aria-hidden="true" /> {doctor.specialization || t('doctors.specializationNotListed')}</p>
         </div>
       </div>
       <div className="badge-row">
-        <StatusBadge status="approved" label="Approved" />
-        {doctor.isDemo && <StatusBadge status="demo" label="Demonstration profile" />}
+        <StatusBadge status="approved" label={t('doctors.approved')} />
+        {doctor.isDemo && <StatusBadge status="demo" label={t('doctors.demoProfile')} />}
       </div>
       <dl className="fact-list compact">
-        <div><dt>Qualification</dt><dd>{doctor.qualification || 'Not listed'}</dd></div>
-        <div><dt>Experience</dt><dd>{doctor.experienceYears != null ? `${doctor.experienceYears} years` : 'Not listed'}</dd></div>
+        <div><dt>{t('doctors.qualification')}</dt><dd>{doctor.qualification || t('common.notListed')}</dd></div>
+        <div><dt>{t('doctors.experience')}</dt><dd>{doctor.experienceYears != null ? t('doctors.years', { years: doctor.experienceYears }) : t('common.notListed')}</dd></div>
       </dl>
       <div className="card-foot">
-        <span className="card-location"><MapPin size={14} aria-hidden="true" /> {doctor.district || 'District not listed'}</span>
-        <span className="card-fee">{doctor.consultationFee != null ? `₹${doctor.consultationFee}` : 'Fee not listed'}</span>
+        <span className="card-location"><MapPin size={14} aria-hidden="true" /> {doctor.district || t('doctors.districtNotListed')}</span>
+        <span className="card-fee">{doctor.consultationFee != null ? `₹${doctor.consultationFee}` : t('doctors.feeNotListed')}</span>
       </div>
-      {id && <span className="card-link">View profile <ArrowRight size={14} aria-hidden="true" /></span>}
+      {id && <span className="card-link">{t('doctors.viewProfile')} <ArrowRight size={14} aria-hidden="true" /></span>}
     </>
   );
   return id
@@ -610,6 +715,7 @@ function DoctorCard({ doctor }) {
 DoctorCard.propTypes = { doctor: PropTypes.object.isRequired };
 
 function DoctorDirectory() {
+  const { t } = useLanguage();
   const [params, setParams] = useSearchParams();
   const [initial] = useState(() => ({ name: params.get('name') || '', specialization: params.get('specialization') || '', district: params.get('district') || '' }));
   const [filters, setFilters] = useState(initial);
@@ -650,40 +756,41 @@ function DoctorDirectory() {
 
   return (
     <div className="page">
-      <PageHeader
-        title="Find a doctor"
-        description="Search administrator-approved professionals by name, specialization or district."
-      />
+      <PageHeader title={t('doctors.title')} description={t('doctors.description')} />
 
-      <SearchForm onSubmit={submit} onClear={clear} busy={loading} id="doctor search">
-        <Field label="Doctor name" value={filters.name} onChange={(value) => setFilters({ ...filters, name: value })} placeholder="e.g. Priya Raman" />
-        <Field label="Specialization" value={filters.specialization} onChange={(value) => setFilters({ ...filters, specialization: value })} placeholder="e.g. Paediatrics" />
-        <Field label="District" value={filters.district} onChange={(value) => setFilters({ ...filters, district: value })} placeholder="e.g. Coimbatore" />
+      <SearchForm onSubmit={submit} onClear={clear} busy={loading} id={t('doctors.title')}>
+        <Field label={t('doctors.nameLabel')} value={filters.name} onChange={(value) => setFilters({ ...filters, name: value })} placeholder={t('doctors.namePlaceholder')} />
+        <Field label={t('doctors.specializationLabel')} value={filters.specialization} onChange={(value) => setFilters({ ...filters, specialization: value })} placeholder={t('doctors.specializationPlaceholder')} />
+        <Field label={t('doctors.districtLabel')} value={filters.district} onChange={(value) => setFilters({ ...filters, district: value })} placeholder={t('doctors.districtPlaceholder')} />
       </SearchForm>
 
-      {loading ? <Loading label="Loading doctors…" /> : error ? (
+      {loading ? <Loading label={t('common.loading')} /> : error ? (
         <Alert tone="error" onRetry={() => search(filters)}>{error}</Alert>
       ) : doctors.length ? (
-        <section aria-label="Doctor search results">
+        <section aria-label={t('doctors.title')}>
           <SectionHeader
-            title="Doctors"
-            description={pagination.total ? `Showing ${firstResult}–${lastResult} of ${pagination.total} approved ${pagination.total === 1 ? 'profile' : 'profiles'}.` : 'No approved profiles match your search.'}
+            title={t('doctors.title')}
+            description={pagination.total
+              ? (pagination.total === 1
+                ? t('doctors.resultOne', { from: firstResult, to: lastResult, total: pagination.total })
+                : t('doctors.results', { from: firstResult, to: lastResult, total: pagination.total }))
+              : t('doctors.noResultsTitle')}
           />
           <div className="card-grid">{doctors.map((doctor) => <DoctorCard key={doctor._id} doctor={doctor} />)}</div>
           {pagination.pages > 1 && (
-            <nav className="pagination" aria-label="Doctor search pages">
-              <button type="button" className="btn btn-outline btn-sm" disabled={pagination.page <= 1} onClick={() => search(filters, pagination.page - 1)}>Previous</button>
-              <span>Page {pagination.page} of {pagination.pages}</span>
-              <button type="button" className="btn btn-outline btn-sm" disabled={pagination.page >= pagination.pages} onClick={() => search(filters, pagination.page + 1)}>Next</button>
+            <nav className="pagination" aria-label={t('doctors.title')}>
+              <button type="button" className="btn btn-outline btn-sm" disabled={pagination.page <= 1} onClick={() => search(filters, pagination.page - 1)}>{t('common.previous')}</button>
+              <span>{t('common.pageOf', { page: pagination.page, pages: pagination.pages })}</span>
+              <button type="button" className="btn btn-outline btn-sm" disabled={pagination.page >= pagination.pages} onClick={() => search(filters, pagination.page + 1)}>{t('common.next')}</button>
             </nav>
           )}
         </section>
       ) : (
         <Empty
           icon={<Search size={20} />}
-          title="No doctors found"
-          text="No approved profiles match these filters. Try a different name, specialization or district."
-          action={<button type="button" className="btn btn-outline" onClick={clear}>Clear filters</button>}
+          title={t('doctors.noResultsTitle')}
+          text={t('doctors.noResultsText')}
+          action={<button type="button" className="btn btn-outline" onClick={clear}>{t('common.clearFilters')}</button>}
         />
       )}
     </div>
@@ -693,6 +800,7 @@ function DoctorDirectory() {
 function DoctorDetail() {
   const { id } = useParams();
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [profile, setProfile] = useState(null);
   const [slots, setSlots] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -702,6 +810,7 @@ function DoctorDetail() {
   const [mode, setMode] = useState('in-person');
   const [selected, setSelected] = useState('');
   const [notice, setNotice] = useState('');
+  const [noticeError, setNoticeError] = useState(false);
   const [booking, setBooking] = useState(false);
 
   const loadSlots = useCallback(async () => {
@@ -739,12 +848,14 @@ function DoctorDetail() {
         reason,
         consultationMode: mode,
       });
-      setNotice('Your appointment request has been submitted. The doctor will confirm or reject it.');
+      setNotice(t('doctors.success'));
+      setNoticeError(false);
       setReason('');
       setSelected('');
       await loadSlots();
     } catch (err) {
       setNotice(errorMessage(err));
+      setNoticeError(true);
     } finally {
       setBooking(false);
     }
@@ -753,13 +864,13 @@ function DoctorDetail() {
   if (error) {
     return (
       <div className="page">
-        <PageHeader title="Doctor details" description="Professional profile and appointment availability." actions={<Link className="btn btn-outline" to="/doctors"><ArrowLeft size={16} /> Back to search</Link>} />
+        <PageHeader title={t('doctors.detailTitle')} description={t('doctors.detailDescription')} actions={<Link className="btn btn-outline" to="/doctors"><ArrowLeft size={16} aria-hidden="true" /> {t('doctors.back')}</Link>} />
         <Alert tone="error">{error}</Alert>
-        <Empty title="Profile unavailable" text="Return to the directory to choose another approved doctor." action={<Link className="btn btn-primary" to="/doctors">Find a doctor</Link>} />
+        <Empty title={t('doctors.profileUnavailableTitle')} text={t('doctors.profileUnavailableText')} action={<Link className="btn btn-primary" to="/doctors">{t('doctors.title')}</Link>} />
       </div>
     );
   }
-  if (loading || !profile) return <div className="page"><Loading label="Loading doctor profile…" /></div>;
+  if (loading || !profile) return <div className="page"><Loading label={t('common.loading')} /></div>;
 
   const name = doctorName(profile);
   const approved = profile.verificationStatus === 'approved';
@@ -773,48 +884,50 @@ function DoctorDetail() {
   return (
     <div className="page">
       <PageHeader
-        title="Doctor details"
-        description="Professional information published by this doctor and reviewed by an administrator."
-        actions={<Link className="btn btn-outline" to="/doctors"><ArrowLeft size={16} /> Back to search</Link>}
+        title={t('doctors.detailTitle')}
+        description={t('doctors.detailDescription')}
+        actions={<Link className="btn btn-outline" to="/doctors"><ArrowLeft size={16} aria-hidden="true" /> {t('doctors.back')}</Link>}
       />
 
-      <section className="panel profile-hero">
-        <span className="avatar avatar-lg" aria-hidden="true">{initials(name)}</span>
-        <div className="profile-hero-text">
-          <div className="badge-row">
-            <StatusBadge status={approved ? 'approved' : 'pending'} label={approved ? 'Approved doctor' : 'Pending review'} />
-            {profile.isDemo && <StatusBadge status="demo" label="Demonstration profile — not a real doctor" />}
+      <div className="split-2 align-start">
+        <section className="panel profile-hero">
+          <span className="avatar avatar-lg" aria-hidden="true">{initials(name)}</span>
+          <div className="profile-hero-text">
+            <div className="badge-row">
+              <StatusBadge status={approved ? 'approved' : 'pending'} label={approved ? t('doctors.approvedDoctor') : t('doctors.pendingReview')} />
+              {profile.isDemo && <StatusBadge status="demo" label={t('doctors.demoProfile')} />}
+            </div>
+            <h2>{name}</h2>
+            <p className="profile-role">{profile.specialization || t('doctors.specializationNotListed')}</p>
+            {(profile.biography || profile.bio) && <p className="profile-bio">{profile.biography || profile.bio}</p>}
           </div>
-          <h2>{name}</h2>
-          <p className="profile-role">{profile.specialization || 'Specialization not listed'}</p>
-          {(profile.biography || profile.bio) && <p className="profile-bio">{profile.biography || profile.bio}</p>}
-        </div>
-      </section>
+        </section>
 
-      <section className="panel" aria-label="Professional information">
-        <h2 className="panel-title">Professional information</h2>
-        <dl className="fact-grid">
-          <div><dt>Qualification</dt><dd>{profile.qualification || 'Not listed'}</dd></div>
-          <div><dt>Experience</dt><dd>{profile.experienceYears != null ? `${profile.experienceYears} years` : 'Not listed'}</dd></div>
-          <div><dt>Consultation fee</dt><dd>{profile.consultationFee != null ? `₹${profile.consultationFee}` : 'Not listed'}</dd></div>
-          <div><dt>District</dt><dd>{profile.district || 'Not listed'}</dd></div>
-          <div><dt>Location</dt><dd>{[profile.city, profile.state].filter(Boolean).join(', ') || profile.district || 'Not listed'}</dd></div>
-          <div><dt>Hospital affiliation</dt><dd>{profile.hospitalName || profile.hospital || 'Not listed'}</dd></div>
-        </dl>
-      </section>
+        <section className="panel profile-facts" aria-label={t('doctors.professionalInfo')}>
+          <h2 className="panel-title">{t('doctors.professionalInfo')}</h2>
+          <dl className="fact-grid">
+            <div><dt>{t('doctors.qualification')}</dt><dd>{profile.qualification || t('common.notListed')}</dd></div>
+            <div><dt>{t('doctors.experience')}</dt><dd>{profile.experienceYears != null ? t('doctors.years', { years: profile.experienceYears }) : t('common.notListed')}</dd></div>
+            <div><dt>{t('doctors.consultationFee')}</dt><dd>{profile.consultationFee != null ? `₹${profile.consultationFee}` : t('common.notListed')}</dd></div>
+            <div><dt>{t('doctors.districtLabel')}</dt><dd>{profile.district || t('common.notListed')}</dd></div>
+            <div><dt>{t('doctors.location')}</dt><dd>{[profile.city, profile.state].filter(Boolean).join(', ') || profile.district || t('common.notListed')}</dd></div>
+            <div><dt>{t('doctors.hospitalAffiliation')}</dt><dd>{profile.hospitalName || profile.hospital || t('common.notListed')}</dd></div>
+          </dl>
+        </section>
+      </div>
 
       <section className="panel booking-panel" aria-labelledby="booking-heading">
-        <SectionHeader id="booking-heading" title="Request an appointment" description="Choose one of the slots this doctor has published." />
+        <SectionHeader id="booking-heading" title={t('doctors.bookingTitle')} description={t('doctors.bookingDescription')} />
 
-        {notice && <Alert tone={notice.startsWith('Your appointment') ? 'success' : 'error'}>{notice}</Alert>}
-        {slotError && <Alert tone="warning">Available slots could not be loaded. {slotError}</Alert>}
+        {notice && <Alert tone={noticeError ? 'error' : 'success'}>{notice}</Alert>}
+        {slotError && <Alert tone="warning">{t('doctors.slotsCouldNotLoad')} {slotError}</Alert>}
 
-        {!approved && <Alert tone="warning">This profile is not approved yet, so booking is unavailable.</Alert>}
-        {approved && isDemo && <Alert tone="info">This is a demonstration profile, not a real doctor. Requests you send here are sample records for this academic project and are not delivered to any clinic.</Alert>}
-        {approved && !isDemo && !canBook && <Alert tone="info">Only patient accounts can request an appointment. You are signed in as a {ROLE_LABEL[user?.role]?.toLowerCase()}.</Alert>}
+        {!approved && <Alert tone="warning">{t('doctors.notApproved')}</Alert>}
+        {approved && isDemo && <Alert tone="info">{t('doctors.demoWarning')}</Alert>}
+        {approved && !isDemo && !canBook && <Alert tone="info">{t('doctors.patientOnly', { role: t(`roles.${user?.role}`).toLowerCase() })}</Alert>}
 
         {upcomingSlots.length ? (
-          <div className="slot-grid" role="group" aria-label="Available appointment slots">
+          <div className="slot-grid" role="group" aria-label={t('doctors.bookingTitle')}>
             {upcomingSlots.map((slot) => {
               const key = `${slot.date}|${slot.startTime}`;
               const isSelected = selected === key;
@@ -829,7 +942,7 @@ function DoctorDetail() {
                 >
                   <strong>{formatShortDate(slot.date)}</strong>
                   <span>{slot.startTime}–{slot.endTime}</span>
-                  <small>{slot.available ? (isSelected ? 'Selected' : 'Available') : 'Already requested'}</small>
+                  <small>{slot.available ? (isSelected ? t('doctors.selected') : t('doctors.available')) : t('doctors.requested')}</small>
                 </button>
               );
             })}
@@ -837,36 +950,36 @@ function DoctorDetail() {
         ) : (
           <Empty
             icon={<CalendarDays size={20} />}
-            title="No appointment slots published"
-            text="This doctor has not published upcoming availability. Check the profile again later or choose another doctor."
-            action={<Link className="btn btn-outline" to="/doctors">Browse other doctors</Link>}
+            title={t('doctors.noSlotsTitle')}
+            text={t('doctors.noSlotsText')}
+            action={<Link className="btn btn-outline" to="/doctors">{t('doctors.browseDoctors')}</Link>}
           />
         )}
 
         <div className="booking-form">
           <Field
-            label="Reason for visit"
+            label={t('doctors.reason')}
             as="textarea"
             value={reason}
             onChange={setReason}
-            placeholder="Briefly describe what you would like help with (minimum 3 characters)"
-            hint="Do not include sensitive medical records or emergency information."
+            placeholder={t('doctors.reasonPlaceholder')}
+            hint={t('doctors.reasonHint')}
             required
           />
           <div className="field">
-            <label htmlFor="consultation-mode">Consultation mode</label>
+            <label htmlFor="consultation-mode">{t('doctors.mode')}</label>
             <select id="consultation-mode" value={mode} onChange={(event) => setMode(event.target.value)} disabled={!canBook}>
-              <option value="in-person">In person</option>
-              <option value="online">Online request</option>
+              <option value="in-person">{t('doctors.inPerson')}</option>
+              <option value="online">{t('doctors.online')}</option>
             </select>
-            {mode === 'online' && <p className="field-hint">Online is a request mode only. No video link is created.</p>}
+            {mode === 'online' && <p className="field-hint">{t('doctors.onlineHint')}</p>}
           </div>
         </div>
 
         <div className="booking-actions">
           <button type="button" className="btn btn-primary" disabled={!canBook || !selected || reason.trim().length < 3 || booking} onClick={book}>
             {booking ? <span className="spinner spinner-light" aria-hidden="true" /> : <CalendarDays size={16} aria-hidden="true" />}
-            {booking ? 'Submitting…' : 'Request this slot'}
+            {booking ? t('doctors.submitting') : t('doctors.requestSlot')}
           </button>
           {selectedSlot && <p className="booking-summary">{formatDate(selectedSlot.date)} · {selectedSlot.startTime}–{selectedSlot.endTime}</p>}
         </div>
@@ -880,6 +993,7 @@ function DoctorDetail() {
 /* ------------------------------------------------------------------ */
 
 function HospitalCard({ hospital }) {
+  const { t } = useLanguage();
   const coords = hospitalCoords(hospital);
   const mapLink = `https://www.openstreetmap.org/search?query=${encodeURIComponent([hospital.name, hospital.district].filter(Boolean).join(', '))}`;
   return (
@@ -888,21 +1002,21 @@ function HospitalCard({ hospital }) {
         <span className="avatar avatar-square" aria-hidden="true"><Hospital size={18} /></span>
         <div className="card-head-text">
           <h3>{hospital.name}</h3>
-          <p className="card-location"><MapPin size={14} aria-hidden="true" /> {hospital.district || 'District not listed'}</p>
+          <p className="card-location"><MapPin size={14} aria-hidden="true" /> {hospital.district || t('hospitals.districtNotListed')}</p>
         </div>
       </div>
       <p className="hospital-address">{hospital.address}</p>
-      {hospital.contact && <p className="hospital-contact">Contact: {hospital.contact}</p>}
+      {hospital.contact && <p className="hospital-contact">{t('hospitals.contact')}: {hospital.contact}</p>}
       {Array.isArray(hospital.services) && hospital.services.length > 0 && (
-        <ul className="chip-list" aria-label="Listed services">
+        <ul className="chip-list" aria-label={t('hospitals.listedServices')}>
           {hospital.services.map((service) => <li key={service} className="chip">{service}</li>)}
         </ul>
       )}
       <div className="card-foot">
-        <span className="muted">{hospital.source ? `Source: ${hospital.source}` : 'Source not recorded'}</span>
-        <a className="text-link" href={mapLink} target="_blank" rel="noopener noreferrer">Open in maps <ArrowRight size={14} aria-hidden="true" /></a>
+        <span className="muted">{hospital.source ? t('hospitals.source', { source: hospital.source }) : t('hospitals.sourceNotRecorded')}</span>
+        <a className="text-link" href={mapLink} target="_blank" rel="noopener noreferrer">{t('hospitals.openInMaps')} <ArrowRight size={14} aria-hidden="true" /></a>
       </div>
-      {coords && <p className="map-note">Directory coordinates recorded. Not live facility status.</p>}
+      {coords && <p className="map-note">{t('hospitals.coordinatesNote')}</p>}
     </article>
   );
 }
@@ -936,17 +1050,18 @@ function LocationListener({ mapId }) {
 LocationListener.propTypes = { mapId: PropTypes.number.isRequired };
 
 function HospitalMap({ hospitals }) {
+  const { t } = useLanguage();
   const [mapId] = useState(() => { nextMapId += 1; return nextMapId; });
   const [locationError, setLocationError] = useState('');
   const locate = () => {
     setLocationError('');
     if (!navigator.geolocation) {
-      setLocationError('Location access is not available in this browser. Search by district instead.');
+      setLocationError(t('hospitals.locationUnavailable'));
       return;
     }
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => window.dispatchEvent(new CustomEvent(`carebridge-map-location-${mapId}`, { detail: [coords.latitude, coords.longitude] })),
-      () => setLocationError('Location was not shared. You can continue searching by district.'),
+      () => setLocationError(t('hospitals.locationDenied')),
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 },
     );
   };
@@ -955,9 +1070,9 @@ function HospitalMap({ hospitals }) {
     <section className="panel map-panel" aria-labelledby="map-heading">
       <SectionHeader
         id="map-heading"
-        title="Map of listed centres"
-        description="Only directory records with explicitly entered coordinates are mapped. Markers do not indicate live services."
-        action={<button type="button" className="btn btn-outline btn-sm" onClick={locate}><MapPin size={15} /> Use my location</button>}
+        title={t('hospitals.mapTitle')}
+        description={t('hospitals.mapDescription')}
+        action={<button type="button" className="btn btn-outline btn-sm" onClick={locate}><MapPin size={15} aria-hidden="true" /> {t('hospitals.useMyLocation')}</button>}
       />
       {locationError && <p className="muted" role="status">{locationError}</p>}
       <div className="map-frame">
@@ -981,13 +1096,14 @@ function HospitalMap({ hospitals }) {
           <LocationListener mapId={mapId} />
         </MapContainer>
       </div>
-      <p className="map-attribution">Map tiles © OpenStreetMap contributors. <a href="https://operations.osmfoundation.org/policies/tiles/" target="_blank" rel="noopener noreferrer">Tile usage policy</a>.</p>
+      <p className="map-attribution">{t('hospitals.mapAttribution')} <a href="https://operations.osmfoundation.org/policies/tiles/" target="_blank" rel="noopener noreferrer">{t('hospitals.tilePolicy')}</a>.</p>
     </section>
   );
 }
 HospitalMap.propTypes = { hospitals: PropTypes.arrayOf(PropTypes.object).isRequired };
 
 function HospitalDirectory() {
+  const { t } = useLanguage();
   const [filters, setFilters] = useState({ q: '', district: '', service: '' });
   const [hospitals, setHospitals] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1014,23 +1130,20 @@ function HospitalDirectory() {
 
   return (
     <div className="page">
-      <PageHeader
-        title="Hospitals and healthcare centres"
-        description="Published directory records. Listings are geographic references, not live service availability."
-      />
+      <PageHeader title={t('hospitals.title')} description={t('hospitals.description')} />
 
-      <SearchForm onSubmit={(event) => { event.preventDefault(); search(filters); }} onClear={clear} busy={loading} id="hospital search">
-        <Field label="Centre or address" value={filters.q} onChange={(value) => setFilters({ ...filters, q: value })} placeholder="Search published listings" />
-        <Field label="District" value={filters.district} onChange={(value) => setFilters({ ...filters, district: value })} placeholder="e.g. Coimbatore" />
-        <Field label="Service" value={filters.service} onChange={(value) => setFilters({ ...filters, service: value })} placeholder="e.g. Emergency" />
+      <SearchForm onSubmit={(event) => { event.preventDefault(); search(filters); }} onClear={clear} busy={loading} id={t('hospitals.title')}>
+        <Field label={t('hospitals.searchLabel')} value={filters.q} onChange={(value) => setFilters({ ...filters, q: value })} placeholder={t('hospitals.searchPlaceholder')} />
+        <Field label={t('hospitals.districtLabel')} value={filters.district} onChange={(value) => setFilters({ ...filters, district: value })} placeholder={t('hospitals.districtPlaceholder')} />
+        <Field label={t('hospitals.serviceLabel')} value={filters.service} onChange={(value) => setFilters({ ...filters, service: value })} placeholder={t('hospitals.servicePlaceholder')} />
       </SearchForm>
 
-      {loading ? <Loading label="Loading centres…" /> : error ? (
+      {loading ? <Loading label={t('common.loading')} /> : error ? (
         <Alert tone="error" onRetry={() => search(filters)}>{error}</Alert>
       ) : hospitals.length ? (
         <>
-          <section aria-label="Healthcare centre results">
-            <SectionHeader title="Healthcare centres" description={`${hospitals.length} published ${hospitals.length === 1 ? 'record' : 'records'}.`} />
+          <section aria-label={t('hospitals.title')}>
+            <SectionHeader title={t('hospitals.title')} description={hospitals.length === 1 ? t('hospitals.resultOne', { count: hospitals.length }) : t('hospitals.results', { count: hospitals.length })} />
             <div className="card-grid">{hospitals.map((hospital) => <HospitalCard key={hospital._id} hospital={hospital} />)}</div>
           </section>
           {mapped.length > 0 && <HospitalMap hospitals={mapped} />}
@@ -1038,9 +1151,9 @@ function HospitalDirectory() {
       ) : (
         <Empty
           icon={<Hospital size={20} />}
-          title="No published centres found"
-          text="Centre listings appear after an administrator adds and publishes a directory record. Try a different district or service."
-          action={<button type="button" className="btn btn-outline" onClick={clear}>Clear filters</button>}
+          title={t('hospitals.noResultsTitle')}
+          text={t('hospitals.noResultsText')}
+          action={<button type="button" className="btn btn-outline" onClick={clear}>{t('common.clearFilters')}</button>}
         />
       )}
     </div>
@@ -1055,6 +1168,7 @@ function PatientArea() {
   return (
     <Routes>
       <Route index element={<PatientDashboard />} />
+      <Route path="services" element={<PatientServices />} />
       <Route path="appointments" element={<AppointmentsPage role="patient" />} />
       <Route path="reminders" element={<Reminders />} />
       <Route path="guidance" element={<HealthGuidance />} />
@@ -1063,8 +1177,21 @@ function PatientArea() {
   );
 }
 
+const QUICK_ACCESS = [
+  { key: 'doctors', to: '/doctors', icon: Search, titleKey: 'patient.quickDoctors', textKey: 'patient.quickDoctorsText' },
+  { key: 'hospitals', to: '/hospitals', icon: Hospital, titleKey: 'patient.quickHospitals', textKey: 'patient.quickHospitalsText' },
+  { key: 'services', to: '/patient/services', icon: HeartPulse, titleKey: 'patient.quickServices', textKey: 'patient.quickServicesText' },
+  { key: 'appointments', to: '/patient/appointments', icon: CalendarDays, titleKey: 'patient.quickAppointments', textKey: 'patient.quickAppointmentsText' },
+  { key: 'reminders', to: '/patient/reminders', icon: Pill, titleKey: 'patient.quickReminders', textKey: 'patient.quickRemindersText' },
+  { key: 'guidance', to: '/patient/guidance', icon: Stethoscope, titleKey: 'patient.quickGuidance', textKey: 'patient.quickGuidanceText' },
+  { key: 'profile', to: '/patient/profile', icon: UserRound, titleKey: 'patient.quickProfile', textKey: 'patient.quickProfileText' },
+  { key: 'help', to: '/help', icon: Info, titleKey: 'patient.quickHelp', textKey: 'patient.quickHelpText' },
+  { key: 'about', to: '/about', icon: ShieldCheck, titleKey: 'patient.quickAbout', textKey: 'patient.quickAboutText' },
+];
+
 function PatientDashboard() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [appointments, setAppointments] = useState([]);
   const [reminders, setReminders] = useState([]);
   const [error, setError] = useState('');
@@ -1089,34 +1216,50 @@ function PatientDashboard() {
 
   return (
     <div className="page">
-      <PageHeader
-        eyebrow="Patient overview"
-        title={firstName ? `Welcome back, ${firstName}` : 'Welcome back'}
-        description="Your appointments, reminders and care shortcuts in one place."
-        actions={<Link className="btn btn-primary" to="/doctors"><Search size={16} aria-hidden="true" /> Find a doctor</Link>}
-      />
+      <section className="welcome-panel" aria-labelledby="welcome-heading">
+        <div className="welcome-text">
+          <p className="eyebrow">{t('patient.eyebrow')}</p>
+          <h1 id="welcome-heading">{firstName ? t('patient.welcome', { name: firstName }) : t('patient.welcomeGeneric')}</h1>
+          <p>{t('patient.description')}</p>
+        </div>
+        <Link className="btn btn-primary" to="/doctors"><Search size={16} aria-hidden="true" /> {t('patient.findDoctor')}</Link>
+      </section>
 
       {error && <Alert tone="error">{error}</Alert>}
+
+      <section aria-labelledby="quick-heading" className="quick-section">
+        <SectionHeader id="quick-heading" title={t('patient.quickTitle')} description={t('patient.quickDescription')} />
+        <div className="quick-grid">
+          {QUICK_ACCESS.map(({ key, to, icon: Icon, titleKey, textKey }) => (
+            <Link key={key} className="quick-card" to={to}>
+              <span className={`quick-icon quick-icon-${key}`} aria-hidden="true"><Icon size={20} /></span>
+              <strong>{t(titleKey)}</strong>
+              <p>{t(textKey)}</p>
+              <span className="quick-action">{t('patient.open')} <ArrowRight size={14} aria-hidden="true" /></span>
+            </Link>
+          ))}
+        </div>
+      </section>
 
       <div className="summary-grid">
         <Link className="metric" to="/patient/appointments">
           <span className="metric-icon"><CalendarDays size={18} aria-hidden="true" /></span>
-          <span className="metric-label">Upcoming appointments</span>
+          <span className="metric-label">{t('patient.statsUpcoming')}</span>
           <strong className="metric-value">{loading ? '—' : upcoming.length}</strong>
         </Link>
         <Link className="metric" to="/patient/appointments">
           <span className="metric-icon"><Clock3 size={18} aria-hidden="true" /></span>
-          <span className="metric-label">Pending requests</span>
+          <span className="metric-label">{t('patient.statsPending')}</span>
           <strong className="metric-value">{loading ? '—' : appointments.filter((item) => item.status === 'Pending').length}</strong>
         </Link>
         <Link className="metric" to="/patient/appointments">
           <span className="metric-icon"><CheckCircle2 size={18} aria-hidden="true" /></span>
-          <span className="metric-label">Confirmed</span>
+          <span className="metric-label">{t('patient.statsConfirmed')}</span>
           <strong className="metric-value">{loading ? '—' : appointments.filter((item) => item.status === 'Confirmed').length}</strong>
         </Link>
         <Link className="metric" to="/patient/reminders">
           <span className="metric-icon"><Pill size={18} aria-hidden="true" /></span>
-          <span className="metric-label">Active reminders</span>
+          <span className="metric-label">{t('patient.statsReminders')}</span>
           <strong className="metric-value">{loading ? '—' : reminders.filter((item) => item.active).length}</strong>
         </Link>
       </div>
@@ -1124,9 +1267,9 @@ function PatientDashboard() {
       <section className="panel" aria-labelledby="upcoming-heading">
         <SectionHeader
           id="upcoming-heading"
-          title="Upcoming appointments"
-          description="Pending and confirmed visits from today onward."
-          action={<Link className="text-link" to="/patient/appointments">All appointments <ArrowRight size={14} aria-hidden="true" /></Link>}
+          title={t('patient.upcomingTitle')}
+          description={t('patient.upcomingDescription')}
+          action={<Link className="text-link" to="/patient/appointments">{t('patient.allAppointments')} <ArrowRight size={14} aria-hidden="true" /></Link>}
         />
         {loading ? <Loading /> : upcoming.length ? (
           <ul className="list">
@@ -1137,8 +1280,8 @@ function PatientDashboard() {
                   <span>{appointment.startTime}–{appointment.endTime}</span>
                 </span>
                 <span className="list-main">
-                  <strong>{appointment.doctor?.name || 'Doctor'}</strong>
-                  <small>{appointment.reason || 'Appointment'} · {appointment.consultationMode === 'online' ? 'Online request' : 'In person'}</small>
+                  <strong>{appointment.doctor?.name || t('roles.doctor')}</strong>
+                  <small>{appointment.reason || t('nav.appointments')} · {appointment.consultationMode === 'online' ? t('appointments.online') : t('appointments.inPerson')}</small>
                 </span>
                 <StatusBadge status={appointment.status} />
               </li>
@@ -1147,55 +1290,174 @@ function PatientDashboard() {
         ) : (
           <Empty
             icon={<CalendarDays size={20} />}
-            title="No upcoming appointments"
-            text="Book a visit with an approved doctor and it will appear here."
-            action={<Link className="btn btn-primary" to="/doctors">Find a doctor</Link>}
+            title={t('patient.noUpcomingTitle')}
+            text={t('patient.noUpcomingText')}
+            action={<Link className="btn btn-primary" to="/doctors">{t('patient.findDoctor')}</Link>}
           />
         )}
       </section>
 
-      <div className="split-2">
-        <section className="panel">
-          <h2 className="panel-title">Care shortcuts</h2>
-          <ul className="link-list">
-            <li><Link to="/doctors"><Search size={17} aria-hidden="true" /><span><strong>Find a doctor</strong><small>Search approved professionals</small></span><ArrowRight size={15} aria-hidden="true" /></Link></li>
-            <li><Link to="/hospitals"><Hospital size={17} aria-hidden="true" /><span><strong>Hospital directory</strong><small>Published healthcare centres</small></span><ArrowRight size={15} aria-hidden="true" /></Link></li>
-            <li><Link to="/patient/reminders"><Pill size={17} aria-hidden="true" /><span><strong>Medicine reminders</strong><small>Your personal schedule</small></span><ArrowRight size={15} aria-hidden="true" /></Link></li>
-            <li><Link to="/patient/guidance"><HeartPulse size={17} aria-hidden="true" /><span><strong>Health guidance</strong><small>Educational information and sources</small></span><ArrowRight size={15} aria-hidden="true" /></Link></li>
+      <section className="panel" aria-labelledby="reminders-heading">
+        <SectionHeader
+          id="reminders-heading"
+          title={t('patient.remindersTitle')}
+          description={t('patient.reminderNote')}
+          action={<Link className="text-link" to="/patient/reminders">{t('patient.manage')}</Link>}
+        />
+        {loading ? <Loading /> : reminders.filter((item) => item.active).length ? (
+          <ul className="list">
+            {reminders.filter((item) => item.active).slice(0, 4).map((reminder) => (
+              <li className="list-row" key={reminder._id}>
+                <span className="list-icon"><Pill size={16} aria-hidden="true" /></span>
+                <span className="list-main">
+                  <strong>{reminder.medicineName}</strong>
+                  <small>{reminder.reminderTime} · {t('patient.until', { date: formatShortDate(reminder.endDate) })}</small>
+                </span>
+                <StatusBadge status="active" />
+              </li>
+            ))}
           </ul>
-        </section>
+        ) : (
+          <Empty
+            icon={<Pill size={20} />}
+            title={t('patient.noRemindersTitle')}
+            text={t('patient.noRemindersText')}
+            action={<Link className="btn btn-outline" to="/patient/reminders">{t('patient.addReminder')}</Link>}
+          />
+        )}
+      </section>
+    </div>
+  );
+}
 
-        <section className="panel">
-          <SectionHeader title="Today’s reminders" action={<Link className="text-link" to="/patient/reminders">Manage</Link>} />
-          {loading ? <Loading /> : reminders.length ? (
-            <ul className="list">
-              {reminders.filter((item) => item.active).slice(0, 4).map((reminder) => (
-                <li className="list-row" key={reminder._id}>
-                  <span className="list-icon"><Pill size={16} aria-hidden="true" /></span>
-                  <span className="list-main">
-                    <strong>{reminder.medicineName}</strong>
-                    <small>{reminder.reminderTime} · until {formatShortDate(reminder.endDate)}</small>
-                  </span>
-                  <StatusBadge status="active" />
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <Empty
-              icon={<Pill size={20} />}
-              title="No medicine reminders"
-              text="Add a reminder to keep your own schedule in one place."
-              action={<Link className="btn btn-outline" to="/patient/reminders">Add a reminder</Link>}
-            />
-          )}
-          <p className="muted small">Reminders are saved in your account. CareBridge does not send notifications.</p>
+function PatientServices() {
+  const { t } = useLanguage();
+  const [filters, setFilters] = useState({ service: '', district: '' });
+  const [centres, setCentres] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [place, setPlace] = useState('');
+  const [nearby, setNearby] = useState(null);
+  const [nearbyError, setNearbyError] = useState('');
+  const [nearbyLoading, setNearbyLoading] = useState(false);
+
+  const searchCentres = useCallback(async (values) => {
+    setLoading(true);
+    setError('');
+    try {
+      const { data } = await api.get('/hospitals', { params: { ...cleanParams(values), limit: 50 } });
+      setCentres(Array.isArray(data.hospitals) ? data.hospitals : []);
+    } catch (err) {
+      setError(errorMessage(err));
+      setCentres([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { searchCentres({ service: '', district: '' }); }, [searchCentres]);
+
+  const findNearby = async (event) => {
+    event.preventDefault();
+    if (place.trim().length < 2) return;
+    setNearbyLoading(true);
+    setNearbyError('');
+    try {
+      const { data } = await api.get('/hospitals/nearby', { params: { q: place.trim() } });
+      setNearby(data);
+    } catch (err) {
+      setNearbyError(errorMessage(err));
+      setNearby(null);
+    } finally {
+      setNearbyLoading(false);
+    }
+  };
+
+  const clearFilters = () => {
+    const empty = { service: '', district: '' };
+    setFilters(empty);
+    searchCentres(empty);
+  };
+
+  return (
+    <div className="page">
+      <PageHeader eyebrow={t('services.eyebrow')} title={t('services.title')} description={t('services.description')} />
+
+      <SearchForm
+        id="healthcare service search"
+        onSubmit={(event) => { event.preventDefault(); searchCentres(filters); }}
+        onClear={clearFilters}
+        busy={loading}
+      >
+        <Field label={t('services.serviceLabel')} value={filters.service} onChange={(value) => setFilters({ ...filters, service: value })} placeholder={t('services.servicePlaceholder')} hint={t('services.searchServiceHint')} />
+        <Field label={t('services.districtLabel')} value={filters.district} onChange={(value) => setFilters({ ...filters, district: value })} placeholder={t('services.districtPlaceholder')} />
+      </SearchForm>
+
+      {loading ? <Loading label={t('common.loading')} /> : error ? (
+        <Alert tone="error" onRetry={() => searchCentres(filters)}>{error}</Alert>
+      ) : centres.length ? (
+        <section aria-label={t('services.resultsTitle')}>
+          <SectionHeader
+            title={t('services.resultsTitle')}
+            description={centres.length === 1 ? t('hospitals.resultOne', { count: centres.length }) : t('hospitals.results', { count: centres.length })}
+          />
+          <div className="card-grid">{centres.map((hospital) => <HospitalCard key={hospital._id} hospital={hospital} />)}</div>
         </section>
-      </div>
+      ) : (
+        <Empty icon={<Hospital size={20} />} title={t('services.noResultsTitle')} text={t('services.noResultsText')} />
+      )}
+
+      <section className="panel" aria-labelledby="nearby-heading">
+        <SectionHeader id="nearby-heading" title={t('services.nearbyTitle')} description={t('services.nearbyDescription')} />
+        <form className="search-inline" onSubmit={findNearby}>
+          <Field label={t('services.nearbyTitle')} value={place} onChange={setPlace} placeholder={t('services.nearbyPlaceholder')} />
+          <button type="submit" className="btn btn-primary" disabled={nearbyLoading || place.trim().length < 2}>
+            {nearbyLoading ? <span className="spinner spinner-light" aria-hidden="true" /> : <MapPin size={15} aria-hidden="true" />}
+            {nearbyLoading ? t('services.nearbySearching') : t('services.nearbyButton')}
+          </button>
+        </form>
+        <p className="field-hint">{t('services.nearbyHint')}</p>
+
+        {nearbyError && <Alert tone="error">{t('services.error')}</Alert>}
+
+        {nearby && (
+          <>
+            <p className="source-meta">
+              {t('services.source', { source: nearby.source || 'OpenStreetMap' })}
+              {nearby.retrievedAt ? ` · ${new Date(nearby.retrievedAt).toLocaleString()}` : ''}
+            </p>
+            {nearby.facilities?.length ? (
+              <ul className="nearby-list">
+                {nearby.facilities.map((facility) => (
+                  <li key={facility.id} className="nearby-item">
+                    <div className="nearby-text">
+                      <strong>{facility.name}</strong>
+                      <small>{[facility.facilityType, facility.address].filter(Boolean).join(' · ')}</small>
+                      {facility.contacts?.length ? <small>{facility.contacts.map((contact) => contact.value).join(' · ')}</small> : null}
+                    </div>
+                    <a
+                      className="text-link"
+                      href={`https://www.openstreetmap.org/directions?to=${facility.latitude}%2C${facility.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {t('hospitals.directions')} <ArrowRight size={14} aria-hidden="true" />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <Empty icon={<MapPin size={20} />} title={t('services.nearbyEmptyTitle')} text={t('services.nearbyEmptyText')} />
+            )}
+          </>
+        )}
+      </section>
     </div>
   );
 }
 
 function AppointmentsPage({ role, view = 'all' }) {
+  const { t } = useLanguage();
   const [items, setItems] = useState([]);
   const [statusFilter, setStatusFilter] = useState('');
   const [error, setError] = useState('');
@@ -1226,48 +1488,48 @@ function AppointmentsPage({ role, view = 'all' }) {
   }, [items, role, view]);
 
   const titles = {
-    patient: 'My appointments',
-    requests: 'Appointment requests',
-    history: 'Appointment history',
-    admin: 'Appointment management',
+    patient: 'appointments.patientTitle',
+    requests: 'appointments.requestsTitle',
+    history: 'appointments.historyTitle',
+    admin: 'appointments.adminTitle',
   };
   const descriptions = {
-    patient: 'Every appointment request and its current status.',
-    requests: 'Requests waiting for your decision and confirmed visits.',
-    history: 'Completed, rejected and cancelled appointments.',
-    admin: 'All appointment records across the platform.',
+    patient: 'appointments.patientDescription',
+    requests: 'appointments.requestsDescription',
+    history: 'appointments.historyDescription',
+    admin: 'appointments.adminDescription',
   };
   const pageKey = role === 'admin' ? 'admin' : role === 'patient' ? 'patient' : view;
 
   return (
     <div className="page">
-      <PageHeader title={titles[pageKey] || 'Appointments'} description={descriptions[pageKey]} />
+      <PageHeader title={t(titles[pageKey] || 'appointments.patientTitle')} description={t(descriptions[pageKey] || 'appointments.patientDescription')} />
 
       {role === 'admin' && (
         <div className="toolbar">
           <label className="field inline-field">
-            <span>Status</span>
+            <span>{t('appointments.status')}</span>
             <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-              <option value="">All statuses</option>
-              {['Pending', 'Confirmed', 'Rejected', 'Cancelled', 'Completed'].map((status) => <option key={status} value={status}>{status}</option>)}
+              <option value="">{t('common.allStatuses')}</option>
+              {['Pending', 'Confirmed', 'Rejected', 'Cancelled', 'Completed'].map((status) => <option key={status} value={status}>{t(`status.${status}`)}</option>)}
             </select>
           </label>
-          <button type="button" className="btn btn-outline btn-sm" onClick={load}><RefreshCw size={15} /> Refresh</button>
+          <button type="button" className="btn btn-outline btn-sm" onClick={load}><RefreshCw size={15} aria-hidden="true" /> {t('common.refresh')}</button>
         </div>
       )}
 
-      {loading ? <Loading label="Loading appointments…" /> : error ? (
+      {loading ? <Loading label={t('appointments.loading')} /> : error ? (
         <Alert tone="error" onRetry={load}>{error}</Alert>
       ) : visible.length ? (
         <AppointmentTable appointments={visible} role={role} onChanged={load} />
       ) : (
         <Empty
           icon={<CalendarDays size={20} />}
-          title={view === 'history' ? 'No appointment history yet' : 'No appointments found'}
+          title={view === 'history' ? t('appointments.noHistoryTitle') : t('appointments.noAppointmentsTitle')}
           text={role === 'patient'
-            ? 'Your appointment records will appear here after you request a visit.'
-            : view === 'history' ? 'Completed, rejected and cancelled appointments will appear here.' : 'Appointment records appear here when a booking is made.'}
-          action={role === 'patient' ? <Link className="btn btn-primary" to="/doctors">Find a doctor</Link> : null}
+            ? t('appointments.emptyPatient')
+            : view === 'history' ? t('appointments.emptyHistory') : t('appointments.emptyStaff')}
+          action={role === 'patient' ? <Link className="btn btn-primary" to="/doctors">{t('appointments.findDoctor')}</Link> : null}
         />
       )}
     </div>
@@ -1276,6 +1538,7 @@ function AppointmentsPage({ role, view = 'all' }) {
 AppointmentsPage.propTypes = { role: PropTypes.string.isRequired, view: PropTypes.string };
 
 function AppointmentTable({ appointments, role, onChanged }) {
+  const { t } = useLanguage();
   const [busyId, setBusyId] = useState('');
   const [error, setError] = useState('');
 
@@ -1293,21 +1556,21 @@ function AppointmentTable({ appointments, role, onChanged }) {
   };
 
   const cancel = (appointment) => {
-    if (window.confirm('Cancel this appointment? This cannot be undone.')) update(appointment, 'Cancelled');
+    if (window.confirm(t('appointments.cancelConfirm'))) update(appointment, 'Cancelled');
   };
 
   const actionsFor = (appointment) => {
     const busy = busyId === appointment._id;
     if (role === 'doctor' && appointment.status === 'Pending') {
-      return <><button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => update(appointment, 'Confirmed')}>Accept</button><button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => update(appointment, 'Rejected')}>Reject</button></>;
+      return <><button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => update(appointment, 'Confirmed')}>{t('appointments.accept')}</button><button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => update(appointment, 'Rejected')}>{t('appointments.reject')}</button></>;
     }
     if (role === 'doctor' && appointment.status === 'Confirmed') {
-      return <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => update(appointment, 'Completed')}>Mark completed</button>;
+      return <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => update(appointment, 'Completed')}>{t('appointments.complete')}</button>;
     }
     if ((role === 'patient' || role === 'admin') && ['Pending', 'Confirmed'].includes(appointment.status)) {
-      return <button type="button" className="btn btn-outline btn-sm btn-danger-text" disabled={busy} onClick={() => cancel(appointment)}>Cancel</button>;
+      return <button type="button" className="btn btn-outline btn-sm btn-danger-text" disabled={busy} onClick={() => cancel(appointment)}>{t('appointments.cancel')}</button>;
     }
-    return <span className="muted small">No actions</span>;
+    return <span className="muted small">{t('common.noActions')}</span>;
   };
 
   return (
@@ -1317,28 +1580,28 @@ function AppointmentTable({ appointments, role, onChanged }) {
         <table className="data-table">
           <thead>
             <tr>
-              <th scope="col">{role === 'admin' ? 'Patient and doctor' : role === 'patient' ? 'Doctor' : 'Patient'}</th>
-              <th scope="col">Reason</th>
-              <th scope="col">Date</th>
-              <th scope="col">Time</th>
-              <th scope="col">Mode</th>
-              <th scope="col">Status</th>
-              <th scope="col" className="col-actions">Actions</th>
+              <th scope="col">{role === 'admin' ? t('appointments.patientAndDoctor') : role === 'patient' ? t('appointments.withDoctor') : t('appointments.withPatient')}</th>
+              <th scope="col">{t('appointments.reason')}</th>
+              <th scope="col">{t('appointments.date')}</th>
+              <th scope="col">{t('appointments.time')}</th>
+              <th scope="col">{t('appointments.mode')}</th>
+              <th scope="col">{t('appointments.status')}</th>
+              <th scope="col" className="col-actions">{t('appointments.actions')}</th>
             </tr>
           </thead>
           <tbody>
             {appointments.map((appointment) => (
               <tr key={appointment._id}>
-                <td data-label="With">
-                  <strong>{role === 'patient' ? (appointment.doctor?.name || 'Doctor') : role === 'doctor' ? (appointment.patient?.name || 'Patient') : `${appointment.patient?.name || 'Patient'} → ${appointment.doctor?.name || 'Doctor'}`}</strong>
+                <td data-label={t('appointments.withDoctor')}>
+                  <strong>{role === 'patient' ? (appointment.doctor?.name || t('roles.doctor')) : role === 'doctor' ? (appointment.patient?.name || t('roles.patient')) : `${appointment.patient?.name || t('roles.patient')} → ${appointment.doctor?.name || t('roles.doctor')}`}</strong>
                   {role !== 'patient' && <small className="cell-sub">{appointment.patient?.email || ''}</small>}
                 </td>
-                <td data-label="Reason">{appointment.reason}</td>
-                <td data-label="Date">{formatDate(appointment.appointmentDate)}</td>
-                <td data-label="Time">{appointment.startTime}–{appointment.endTime}</td>
-                <td data-label="Mode">{appointment.consultationMode === 'online' ? 'Online request' : 'In person'}</td>
-                <td data-label="Status"><StatusBadge status={appointment.status} /></td>
-                <td data-label="Actions" className="col-actions"><div className="table-actions">{actionsFor(appointment)}</div></td>
+                <td data-label={t('appointments.reason')}>{appointment.reason}</td>
+                <td data-label={t('appointments.date')}>{formatDate(appointment.appointmentDate)}</td>
+                <td data-label={t('appointments.time')}>{appointment.startTime}–{appointment.endTime}</td>
+                <td data-label={t('appointments.mode')}>{appointment.consultationMode === 'online' ? t('appointments.online') : t('appointments.inPerson')}</td>
+                <td data-label={t('appointments.status')}><StatusBadge status={appointment.status} /></td>
+                <td data-label={t('appointments.actions')} className="col-actions"><div className="table-actions">{actionsFor(appointment)}</div></td>
               </tr>
             ))}
           </tbody>
@@ -1350,6 +1613,7 @@ function AppointmentTable({ appointments, role, onChanged }) {
 AppointmentTable.propTypes = { appointments: PropTypes.arrayOf(PropTypes.object).isRequired, role: PropTypes.string.isRequired, onChanged: PropTypes.func };
 
 function Reminders() {
+  const { t } = useLanguage();
   const emptyForm = { medicineName: '', reminderTime: '', startDate: '', endDate: '', instructions: '' };
   const [items, setItems] = useState([]);
   const [form, setForm] = useState(emptyForm);
@@ -1375,15 +1639,17 @@ function Reminders() {
 
   const submit = async (event) => {
     event.preventDefault();
-    setBusy(true);
     setError('');
     setMessage('');
+    if (!form.medicineName.trim() || !form.reminderTime || !form.startDate || !form.endDate) return setError(t('validation.required'));
+    if (form.endDate < form.startDate) return setError(t('validation.dateRange'));
+    setBusy(true);
     try {
       if (editing) await api.patch(`/reminders/${editing}`, form);
       else await api.post('/reminders', form);
       setForm(emptyForm);
       setEditing('');
-      setMessage(editing ? 'Reminder updated.' : 'Reminder added.');
+      setMessage(editing ? t('reminders.updated') : t('reminders.added'));
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -1403,7 +1669,7 @@ function Reminders() {
   };
 
   const remove = async (item) => {
-    if (!window.confirm('Delete this reminder?')) return;
+    if (!window.confirm(t('reminders.deleteConfirm'))) return;
     setError('');
     try {
       await api.delete(`/reminders/${item._id}`);
@@ -1415,30 +1681,30 @@ function Reminders() {
 
   return (
     <div className="page">
-      <PageHeader title="Medicine reminders" description="Keep your own medicine schedule in CareBridge. This is a personal reference, not a prescription." />
+      <PageHeader title={t('reminders.title')} description={t('reminders.description')} />
 
       <div className="split-2 align-start">
         <section className="panel">
-          <h2 className="panel-title">{editing ? 'Edit reminder' : 'Add a reminder'}</h2>
+          <h2 className="panel-title">{editing ? t('reminders.editTitle') : t('reminders.addTitle')}</h2>
           {error && <Alert tone="error">{error}</Alert>}
           {message && <Alert tone="success">{message}</Alert>}
           <form onSubmit={submit} className="form-grid">
-            <Field label="Medicine name" required value={form.medicineName} onChange={update('medicineName')} placeholder="Name as written on your medicine" />
-            <Field label="Reminder time" type="time" required value={form.reminderTime} onChange={update('reminderTime')} />
-            <Field label="Start date" type="date" required value={form.startDate} onChange={update('startDate')} />
-            <Field label="End date" type="date" required value={form.endDate} onChange={update('endDate')} />
+            <Field label={t('reminders.medicineName')} required value={form.medicineName} onChange={update('medicineName')} placeholder={t('reminders.medicinePlaceholder')} />
+            <Field label={t('reminders.time')} type="time" required value={form.reminderTime} onChange={update('reminderTime')} />
+            <Field label={t('reminders.startDate')} type="date" required value={form.startDate} onChange={update('startDate')} />
+            <Field label={t('reminders.endDate')} type="date" required value={form.endDate} onChange={update('endDate')} />
             <div className="span-all">
-              <Field label="Instructions (optional)" as="textarea" value={form.instructions} onChange={update('instructions')} placeholder="Personal note" hint="Do not enter dosages unless your prescriber gave them to you." />
+              <Field label={t('reminders.instructions')} as="textarea" value={form.instructions} onChange={update('instructions')} placeholder={t('reminders.instructionsPlaceholder')} hint={t('reminders.instructionsHint')} />
             </div>
             <div className="form-actions span-all">
-              <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Add reminder'}</button>
-              {editing && <button type="button" className="btn btn-outline" onClick={() => { setForm(emptyForm); setEditing(''); }}>Cancel</button>}
+              <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? t('reminders.saving') : editing ? t('reminders.saveChanges') : t('reminders.add')}</button>
+              {editing && <button type="button" className="btn btn-outline" onClick={() => { setForm(emptyForm); setEditing(''); }}>{t('common.cancel')}</button>}
             </div>
           </form>
         </section>
 
         <section className="panel">
-          <SectionHeader title="Saved reminders" description="Only your own reminders are shown." />
+          <SectionHeader title={t('reminders.savedTitle')} description={t('reminders.savedDescription')} />
           {loading ? <Loading /> : items.length ? (
             <ul className="list">
               {items.map((item) => (
@@ -1450,15 +1716,15 @@ function Reminders() {
                   </span>
                   <StatusBadge status={item.active ? 'active' : 'inactive'} />
                   <span className="row-actions">
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setForm({ medicineName: item.medicineName, reminderTime: item.reminderTime, startDate: item.startDate, endDate: item.endDate, instructions: item.instructions || '' }); setEditing(item._id); setMessage(''); }}>Edit</button>
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => toggle(item)}>{item.active ? 'Deactivate' : 'Reactivate'}</button>
-                    <button type="button" className="btn btn-ghost btn-sm btn-danger-text" onClick={() => remove(item)}>Delete</button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setForm({ medicineName: item.medicineName, reminderTime: item.reminderTime, startDate: item.startDate, endDate: item.endDate, instructions: item.instructions || '' }); setEditing(item._id); setMessage(''); }}>{t('reminders.edit')}</button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => toggle(item)}>{item.active ? t('reminders.deactivate') : t('reminders.reactivate')}</button>
+                    <button type="button" className="btn btn-ghost btn-sm btn-danger-text" onClick={() => remove(item)}>{t('reminders.delete')}</button>
                   </span>
                 </li>
               ))}
             </ul>
           ) : (
-            <Empty icon={<Pill size={20} />} title="No reminders yet" text="Add a reminder using the form to keep your schedule in one place." />
+            <Empty icon={<Pill size={20} />} title={t('reminders.emptyTitle')} text={t('reminders.emptyText')} />
           )}
         </section>
       </div>
@@ -1472,7 +1738,9 @@ function Reminders() {
 
 function HealthGuidance() {
   const [symptoms, setSymptoms] = useState('');
-  const [result, setResult] = useState('');
+  const [result, setResult] = useState(null);
+  const [guidanceError, setGuidanceError] = useState('');
+  const [guidanceBusy, setGuidanceBusy] = useState(false);
   const [query, setQuery] = useState('');
   const [topics, setTopics] = useState([]);
   const [searchError, setSearchError] = useState('');
@@ -1480,13 +1748,24 @@ function HealthGuidance() {
   const [cached, setCached] = useState(false);
   const [stale, setStale] = useState(false);
 
-  const guidance = (event) => {
+  const askForGuidance = async (event) => {
     event.preventDefault();
-    const text = symptoms.toLowerCase();
-    const emergency = ['chest pain', 'difficulty breathing', 'cannot breathe', 'unconscious', 'severe bleeding', 'stroke', 'seizure'].some((term) => text.includes(term));
-    setResult(emergency
-      ? 'Your description may include warning signs. This tool cannot assess an emergency. Please contact local emergency services or seek urgent professional medical evaluation now.'
-      : 'This educational example cannot tell what is causing symptoms. If symptoms are severe, new, worsening, persistent or concerning, contact a qualified healthcare professional for an assessment.');
+    const text = symptoms.trim();
+    setGuidanceError('');
+    setResult(null);
+    if (!text) {
+      setResult({ general: true });
+      return;
+    }
+    setGuidanceBusy(true);
+    try {
+      const { data } = await api.post('/health-information/guidance', { symptoms: text });
+      setResult(data);
+    } catch (err) {
+      setGuidanceError(errorMessage(err));
+    } finally {
+      setGuidanceBusy(false);
+    }
   };
 
   const searchTopics = async (event) => {
@@ -1507,25 +1786,45 @@ function HealthGuidance() {
   };
 
   return (
-    <div className="page">
+    <div className="page guidance-page">
       <PageHeader title="Health guidance" description="Educational information and attributed external sources. This is not a diagnosis." />
 
       <div className="notice-banner">
         <Info size={20} aria-hidden="true" />
         <div>
           <strong>Educational symptom guidance, not AI or triage</strong>
-          <p>CareBridge uses a short local rule-based example. Your description is not sent to an external service, is not stored, and cannot diagnose a condition.</p>
+          <p>CareBridge matches the key words from your description with MedlinePlus.gov, the U.S. National Library of Medicine’s public health-topic service. The description itself is not stored, and no result can diagnose a condition. MedlinePlus topics are in English.</p>
         </div>
       </div>
 
       <div className="split-2 align-start">
         <section className="panel">
           <h2 className="panel-title">General symptom guidance</h2>
-          <form onSubmit={guidance} className="stack">
-            <Field label="Describe what you are experiencing (optional)" as="textarea" value={symptoms} onChange={setSymptoms} placeholder="Share only what you are comfortable entering" />
-            <button type="submit" className="btn btn-primary">Show general guidance</button>
+          <form onSubmit={askForGuidance} className="stack">
+            <Field label="Describe what you are experiencing (optional)" as="textarea" value={symptoms} onChange={setSymptoms} placeholder="Share only what you are comfortable entering" hint="Only matched keywords are sent to MedlinePlus.gov; your description is not stored." />
+            <button type="submit" className="btn btn-primary" disabled={guidanceBusy}>{guidanceBusy ? 'Looking up…' : 'Show general guidance'}</button>
           </form>
-          {result && <Alert tone="warning">{result}</Alert>}
+          {guidanceError && <Alert tone="error">{guidanceError}</Alert>}
+          {result?.general && <p className="muted small">CareBridge cannot tell what is causing symptoms. For severe, new, worsening or persistent symptoms, contact a qualified healthcare professional. In an emergency, contact local emergency services.</p>}
+          {result?.emergency && <Alert tone="error">Your description may include warning signs. This lookup cannot assess an emergency. Contact local emergency services or seek urgent professional medical evaluation now.</Alert>}
+          {result && !result.emergency && result.available === false && <Alert tone="warning">{result.message}</Alert>}
+          {result?.available && result.message && <p className="muted small">{result.message}</p>}
+          {result?.topics?.length > 0 && (
+            <>
+              <p className="source-meta">Matched {result.keywords.map((word) => `“${word}”`).join(', ')} · Source: MedlinePlus.gov. MedlinePlus does not endorse CareBridge.</p>
+              <ul className="source-list">
+                {result.topics.map((topic) => (
+                  <li key={topic.url}>
+                    <a href={topic.url} target="_blank" rel="noopener noreferrer">{topic.title} <ArrowRight size={14} aria-hidden="true" /></a>
+                    {topic.summary && <p>{topic.summary}</p>}
+                    <small>Source: MedlinePlus.gov{topic.categories?.length ? ` · ${topic.categories.join(', ')}` : ''}</small>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {result?.topics?.length === 0 && result.available && !result.emergency && !result.message && <p className="muted small">No MedlinePlus topic matched those keywords. Try plainer words such as “headache” or “fever”.</p>}
+          {result && !result.general && <p className="muted small">This educational lookup cannot tell what is causing symptoms. If symptoms are severe, new, worsening, persistent or concerning, contact a qualified healthcare professional.</p>}
         </section>
 
         <section className="panel">
@@ -1716,6 +2015,7 @@ ProfileHero.propTypes = {
 
 function PatientProfile() {
   const { user, setUser } = useAuth();
+  const { t } = useLanguage();
   const [name, setName] = useState(user.name || '');
   const [phone, setPhone] = useState(user.phone || '');
   const [message, setMessage] = useState('');
@@ -1733,7 +2033,7 @@ function PatientProfile() {
     try {
       const { data } = await api.patch('/auth/profile', { name, phone });
       setUser(data.user);
-      setMessage('Profile updated.');
+      setMessage(t('profile.updated'));
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -1743,21 +2043,17 @@ function PatientProfile() {
 
   return (
     <div className="page">
-      <PageHeader
-        eyebrow="Account"
-        title="My profile"
-        description="Manage your personal details and review how you sign in to CareBridge."
-      />
+      <PageHeader eyebrow={t('profile.eyebrow')} title={t('profile.title')} description={t('profile.description')} />
 
       <ProfileHero
         name={user.name}
         email={user.email}
-        subtitle={`${ROLE_LABEL[user.role]} account`}
+        subtitle={`${t(`roles.${user.role}`)} ${t('profile.eyebrow').toLowerCase()}`}
         badges={[
-          <StatusBadge key="status" status={user.status} label={user.status === 'active' ? 'Active account' : 'Inactive account'} />,
-          <StatusBadge key="password" status="info" label="Password sign-in" />,
+          <StatusBadge key="status" status={user.status} label={user.status === 'active' ? t('profile.activeAccount') : t('profile.inactiveAccount')} />,
+          <StatusBadge key="password" status="info" label={t('profile.passwordSignIn')} />,
         ]}
-        actions={<Link className="btn btn-outline" to="/patient/appointments"><CalendarDays size={16} aria-hidden="true" /> My appointments</Link>}
+        actions={<Link className="btn btn-outline" to="/patient/appointments"><CalendarDays size={16} aria-hidden="true" /> {t('patient.quickAppointments')}</Link>}
       />
 
       {error && <Alert tone="error">{error}</Alert>}
@@ -1767,59 +2063,59 @@ function PatientProfile() {
         <section className="panel" aria-labelledby="account-details">
           <div className="section-head">
             <div>
-              <h2 id="account-details">Account details</h2>
-              <p>Keep your contact information current so care providers can reach you.</p>
+              <h2 id="account-details">{t('profile.accountDetails')}</h2>
+              <p>{t('profile.accountDetailsDescription')}</p>
             </div>
           </div>
           <form onSubmit={submit} className="stack">
             <div className="form-grid">
-              <Field label="Full name" required value={name} onChange={setName} autoComplete="name" />
-              <Field label="Email address" value={user.email} onChange={() => {}} disabled hint="Contact an administrator to change the email on your account." />
-              <Field label="Phone number" value={phone} onChange={setPhone} autoComplete="tel" placeholder="Add a contact number" />
+              <Field label={t('profile.fullName')} required value={name} onChange={setName} autoComplete="name" />
+              <Field label={t('profile.email')} value={user.email} onChange={() => {}} disabled hint={t('profile.emailHint')} />
+              <Field label={t('profile.phone')} value={phone} onChange={setPhone} autoComplete="tel" placeholder={t('profile.phonePlaceholder')} />
               <div className="field">
-                <span>Account type</span>
-                <p className="profile-readonly">{ROLE_LABEL[user.role]}</p>
+                <span>{t('profile.accountType')}</span>
+                <p className="profile-readonly">{t(`roles.${user.role}`)}</p>
               </div>
             </div>
             <div className="form-actions">
-              <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
-              <span className="muted small">Your email address is used to sign in.</span>
+              <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? t('profile.saving') : t('profile.save')}</button>
+              <span className="muted small">{t('profile.emailUsedToSignIn')}</span>
             </div>
           </form>
         </section>
 
         <aside className="profile-side">
           <section className="panel" aria-labelledby="account-summary">
-            <h2 className="panel-title" id="account-summary">Account summary</h2>
+            <h2 className="panel-title" id="account-summary">{t('profile.summary')}</h2>
             <dl className="fact-list">
-              <div><dt>Email</dt><dd>{user.email}</dd></div>
-              <div><dt>Phone</dt><dd>{user.phone || 'Not added'}</dd></div>
-              <div><dt>Member since</dt><dd>{formatMonthYear(user.createdAt)}</dd></div>
-              <div><dt>Status</dt><dd>{user.status === 'active' ? 'Active' : 'Inactive'}</dd></div>
+              <div><dt>{t('profile.email')}</dt><dd>{user.email}</dd></div>
+              <div><dt>{t('profile.phone')}</dt><dd>{user.phone || t('profile.notAdded')}</dd></div>
+              <div><dt>{t('profile.memberSince')}</dt><dd>{formatMonthYear(user.createdAt)}</dd></div>
+              <div><dt>{t('profile.status')}</dt><dd>{user.status === 'active' ? t('profile.active') : t('profile.inactiveAccount')}</dd></div>
             </dl>
-            <ProfileCompleteness value={completeness} />
+            <ProfileCompleteness value={completeness} label={t('profile.completeness')} />
           </section>
 
           <section className="panel" aria-labelledby="sign-in-methods">
-            <h2 className="panel-title" id="sign-in-methods">Sign-in methods</h2>
+            <h2 className="panel-title" id="sign-in-methods">{t('profile.signInMethods')}</h2>
             <ul className="security-list">
               <li>
                 <span className="list-icon"><KeyRound size={16} aria-hidden="true" /></span>
-                <div className="list-main"><strong>Password</strong><small>Your password is stored as a secure one-way hash.</small></div>
-                <StatusBadge status="approved" label="Enabled" />
+                <div className="list-main"><strong>{t('profile.password')}</strong><small>{t('profile.passwordHash')}</small></div>
+                <StatusBadge status="approved" label={t('profile.enabled')} />
               </li>
               <li>
                 <span className="list-icon"><LockKeyhole size={16} aria-hidden="true" /></span>
-                <div className="list-main"><strong>Session</strong><small>Sign-ins use an HttpOnly cookie that expires after seven days.</small></div>
-                <StatusBadge status="approved" label="Protected" />
+                <div className="list-main"><strong>{t('profile.session')}</strong><small>{t('profile.sessionText')}</small></div>
+                <StatusBadge status="approved" label={t('profile.protected')} />
               </li>
               <li>
                 <span className="list-icon"><ShieldCheck size={16} aria-hidden="true" /></span>
-                <div className="list-main"><strong>Role-based access</strong><small>Your patient workspace is limited to your own records.</small></div>
-                <StatusBadge status="approved" label="Active" />
+                <div className="list-main"><strong>{t('profile.roleAccess')}</strong><small>{t('profile.roleAccessText')}</small></div>
+                <StatusBadge status="approved" label={t('profile.active')} />
               </li>
             </ul>
-            <p className="profile-security-note"><LockKeyhole size={14} aria-hidden="true" /> CareBridge never displays your password or session token.</p>
+            <p className="profile-security-note"><LockKeyhole size={14} aria-hidden="true" /> {t('profile.privacyNote')}</p>
           </section>
         </aside>
       </div>
@@ -2533,9 +2829,11 @@ function HospitalManagement() {
 function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <AppShell />
-      </AuthProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <AppShell />
+        </AuthProvider>
+      </LanguageProvider>
     </BrowserRouter>
   );
 }

@@ -9,7 +9,7 @@ CareBridge is a student academic project for discovering administrator-verified 
 
 ## Problem statement and objectives
 
-Rural and underserved communities can face difficulty finding nearby care and coordinating appointments. This project demonstrates a web-based directory and workflow that can help users search professional profiles, see doctor-provided time slots, request appointments, and manage basic personal reminders. Objectives include a clear multi-role MERN architecture, secure role-aware data access, a demonstrable booking workflow, and a clear English-language interface.
+Rural and underserved communities can face difficulty finding nearby care and coordinating appointments. This project demonstrates a web-based directory and workflow that can help users search professional profiles, see doctor-provided time slots, request appointments, and manage basic personal reminders. Objectives include a clear multi-role MERN architecture, secure role-aware data access, a demonstrable booking workflow, and a clear English/Tamil patient interface.
 
 ## Student team
 
@@ -25,8 +25,8 @@ Suggested responsibilities, not a record of completed contributions, are in [doc
 ## Features implemented
 
 - Login-first responsive application: unauthenticated visitors land on `/login`; doctor discovery, hospital directory, About, dashboards, and all account pages require a valid session.
-- One medical-blue interface shared by every role: a single authenticated header, role-specific sidebar navigation, consistent page headings, buttons, forms, cards, tables, status badges and compact empty states, with an off-canvas drawer on small screens.
-- English-only interface with password-based patient and doctor registration and sign-in.
+- One clinical blue-on-paper interface shared by every role: a single authenticated header, role-specific sidebar navigation, consistent page headings, buttons, forms, cards, tables, status badges and compact empty states, with an off-canvas drawer on small screens. Page titles use an editorial serif against a humanist UI face, both self-hosted so the interface renders the same offline and under the production CSP.
+- English and Tamil interfaces with password-based patient and doctor registration and sign-in. A header language selector remembers the choice on the device; navigation, the patient dashboard, directories, appointments, profile and help are translated, while administrative and clinical review screens remain in English.
 - Patient and doctor registration; administrator accounts are created only through the protected seed script.
 - Password hashing (bcryptjs), HttpOnly JWT cookie sessions, account status, authentication rate limits, exact-origin CORS, Helmet security headers, request validation, and role-checked APIs.
 - Doctor registration creates a **pending** profile. An administrator can review, approve or reject doctors. Only approved profiles are public.
@@ -39,12 +39,15 @@ Suggested responsibilities, not a record of completed contributions, are in [doc
 - Separate backend and live MongoDB ping health checks (`/api/health`, `/api/health/db`).
 
 - Upgraded patient and doctor profile pages: identity summary with avatar, editable account or practice details, profile completeness, directory visibility, and sign-in method status.
+- Patient dashboard with quick access to doctors, hospitals, healthcare-service search, appointments, profile and help.
+- Healthcare-services page that searches published centres by service and nearby OpenStreetMap facilities with directions links and source attribution.
+- Help and support page with emergency guidance, common questions, privacy information and limitations, plus a real 404 page for unknown routes.
 
 See the acceptance checklist and limitations in [docs/TESTING.md](docs/TESTING.md). The hospital directory shows a Leaflet/OpenStreetMap map only for records with explicitly entered coordinates; no public geocoder is used. Government directory import, medicine reminder notifications, video calls, and clinical diagnosis are not implemented.
 
 ## Technology stack
 
-- **Frontend:** React 18, Vite, JavaScript, React Router, Axios, Lucide React, CSS.
+- **Frontend:** React 18, Vite, JavaScript, React Router, Axios, Lucide React, CSS, self-hosted Instrument Sans / Newsreader / Noto Sans Tamil variable fonts (Fontsource).
 - **Backend:** Node.js, Express 4, Mongoose, bcryptjs, jsonwebtoken, cookie-parser, Helmet, CORS, express-rate-limit, fast-xml-parser.
 - **Database:** MongoDB (MongoDB Atlas or a compatible MongoDB server).
 - **Tests:** Node's built-in test runner and Supertest against the configured workspace MongoDB.
@@ -68,6 +71,17 @@ Node.js 20+ and npm are recommended. A reachable MongoDB database is required fo
    The Vite frontend listens on port 5173 and proxies `/api` to Express on port 5000. Open the Vite preview in Nimbus. Alternatively, `npm run server` and `npm run client` start each service separately.
 4. `GET http://localhost:5000/api/health` confirms the backend responds. `GET http://localhost:5000/api/health/db` performs a MongoDB ping and returns HTTP 200 when the database is usable or HTTP 503 when disconnected.
 5. For a production-style single server, build the client with `npm --prefix client run build`, configure environment variables, then run `npm start`. Express serves `client/dist`. The MedlinePlus feature uses a public, keyless endpoint and needs no credential. Optional `VITE_MAP_TILE_URL` configures a compatible tile template; default is OpenStreetMap's public standard tile URL, subject to its usage policy.
+
+### Vercel deployment
+
+The repository includes `vercel.json` and a serverless entry point (`api/index.js`) that reuse the existing Express app and a cached MongoDB connection. The React build is served from Vercel's CDN, and every non-API path rewrites to `index.html` so `/patient` and other deep links work on refresh.
+
+1. Link the existing Git repository to the existing Vercel project rather than creating a duplicate.
+2. Add `MONGODB_URI`, `JWT_SECRET` and `NODE_ENV=production` to Preview and Production environment variables. Do not prefix server secrets with `VITE_`. See `.env.example`.
+3. Use build command `npm --prefix client install && npm --prefix client run build` and output directory `client/dist` (already set in `vercel.json`).
+4. Deploy a preview, verify `/api/health`, `/api/health/db`, sign-in, directories and direct access to `/patient`, then promote it to production.
+
+Full details and a verification checklist are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Vercel account login and dashboard configuration require the account owner and cannot be completed from the repository alone.
 
 ### Environment variables
 
@@ -126,12 +140,10 @@ Potential future work includes reviewed provider onboarding, map/list enhancemen
 - [Architecture](docs/ARCHITECTURE.md)
 - [Authentication and login-first routing](docs/AUTHENTICATION.md)
 - [External APIs and map attribution](docs/EXTERNAL_APIS.md)
-- [Database troubleshooting](docs/DATABASE_TROUBLESHOOTING.md)
 - [REST API](docs/API.md)
 - [Database](docs/DATABASE.md)
 - [Database troubleshooting](docs/DATABASE_TROUBLESHOOTING.md)
-- [Authentication](docs/AUTHENTICATION.md)
-- [External APIs and attribution](docs/EXTERNAL_APIS.md)
+- [Vercel deployment](docs/DEPLOYMENT.md)
 - [Testing and acceptance checklist](docs/TESTING.md)
 - [Faculty demo script](docs/DEMO_SCRIPT.md)
 - [Team and learning topics](docs/TEAM.md)

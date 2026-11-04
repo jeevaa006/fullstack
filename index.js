@@ -6,6 +6,7 @@ const helmet = require('helmet');
 const cors = require('cors');
 const path = require('path');
 const routes = require('./routes/api');
+const { connectToDatabase } = require('./lib/database');
 
 const app = express();
 const normalizeOrigin = (origin) => {
@@ -19,7 +20,23 @@ const isSameHost = (origin, host) => {
   } catch { return false; }
 };
 app.disable('x-powered-by');
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' }, contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false }));
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      fontSrc: ["'self'", 'data:'],
+      connectSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+    },
+  } : false,
+}));
 app.use((req, res, next) => cors({ origin(origin, callback) {
   if (!origin || allowedOrigins.includes(normalizeOrigin(origin)) || isSameHost(origin, req.get('host') || '')) return callback(null, true);
   return callback(new Error('This origin is not allowed by CORS.'));
@@ -49,16 +66,12 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   const port = Number(process.env.PORT) || 5000;
-  const mongoUri = process.env.MONGODB_URI || process.env.MONGO_DB_URI;
-  if (mongoUri) {
-    try {
-      await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 5000, connectTimeoutMS: 15000, socketTimeoutMS: 30000, heartbeatFrequencyMS: 10000 });
-      console.log('MongoDB connected.');
-    } catch (error) {
-      console.error(`MongoDB unavailable (${error.name || 'connection error'}); database-backed requests will return HTTP 503.`);
-    }
-  } else {
-    console.error('MONGODB_URI is not configured; database-backed requests will return HTTP 503.');
+  try {
+    await connectToDatabase();
+    console.log('MongoDB connected.');
+  } catch (error) {
+    // Never print the connection string or credentials here.
+    console.error(`MongoDB unavailable (${error.code || error.name || 'connection error'}); database-backed requests will return HTTP 503.`);
   }
   mongoose.connection.on('disconnected', () => console.warn('MongoDB disconnected.'));
   mongoose.connection.on('reconnected', () => console.log('MongoDB reconnected.'));
