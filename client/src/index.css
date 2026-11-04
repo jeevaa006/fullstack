@@ -1,0 +1,122 @@
+:root {
+  font-family: Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
+  color: var(--text-primary);
+  background: var(--page-background);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 1.55;
+  font-feature-settings: "cv05" on, "cv11" on;
+
+  /* Brand ramp — clinical blue with a calmer, deeper ink */
+  --blue-50: #f1f8fe;
+  --blue-100: #eaf4fc;
+  --blue-200: #d5e9f8;
+  --blue-300: #b4d6ef;
+  --blue-500: #1d76b8;
+  --blue-600: #1769aa;
+  --blue-700: #12578d;
+  --blue-800: #123b5d;
+  --blue-900: #0f3554;
+
+  --primary-blue: #1769aa;
+  --primary-hover: #115689;
+  --dark-blue: #0f3554;
+  --light-blue: #eaf4fc;
+  --primary-blue-light: #eaf4fc;
+  --blue-primary: #1769aa;
+  --blue-hover: #115689;
+  --blue-dark: #0f3554;
+  --blue-light: #eaf4fc;
+
+  /* Health accent */
+  --teal: #0d7374;
+  --teal-light: #e6f6f5;
+  --teal-border: #bfe6e4;
+
+  /* Ink and neutrals */
+  --text-primary: #12263f;
+  --text-secondary: #4e6479;
+  --text-muted: #4e6479;
+  --text-placeholder: #63788d;
+
+  /* Feedback */
+  --success: #067647;
+  --success-background: #ecfdf3;
+  --warning: #b54708;
+  --warning-background: #fffaeb;
+  --error: #b42318;
+  --error-background: #fef3f2;
+  --info: #175cd3;
+  --info-background: #eff8ff;
+
+  /* Surfaces */
+  --surface: #ffffff;
+  --card-background: #ffffff;
+  --surface-secondary: #f6f9fc;
+  --surface-hover: #f8fbfe;
+  --page-background: #f4f8fc;
+  --border: #d9e3ee;
+  --border-strong: #c8d6e5;
+  --primary-border: #d9e3ee;
+  --divider: #e6edf5;
+
+  /* Focus */
+  --focus-ring: #0b5c98;
+  --focus-halo: rgb(255 255 255 / 85%);
+
+  /* Shape */
+  --radius-control: 10px;
+  --radius-card: 16px;
+  --radius-panel: 18px;
+  --radius-pill: 999px;
+
+  /* Elevation */
+  --shadow-xs: 0 1px 2px rgb(15 53 84 / 6%);
+  --shadow-card: 0 1px 2px rgb(15 53 84 / 4%), 0 6px 18px -12px rgb(15 53 84 / 18%);
+  --shadow-hover: 0 2px 4px rgb(15 53 84 / 5%), 0 16px 32px -18px rgb(15 53 84 / 26%);
+  --shadow-lg: 0 4px 8px rgb(15 53 84 / 6%), 0 28px 56px -24px rgb(15 53 84 / 30%);
+
+  /* Spacing rhythm */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Motion */
+  --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0.72, 0.28, 1);
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 240ms;
+}
+
+* { box-sizing: border-box; }
+html { min-width: 320px; scroll-behavior: smooth; }
+body { min-width: 320px; min-height: 100vh; margin: 0; background: var(--page-background); }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+a { color: inherit; }
+#root { min-height: 100vh; display: flex; flex-direction: column; }
+main { flex: 1; min-width: 0; }
+::selection { color: var(--blue-900); background: #bfdbfe; }
+:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+
+:where(h1, h2, h3) { text-wrap: balance; }
+:where(p) { text-wrap: pretty; }
+
+input::placeholder, textarea::placeholder { color: var(--text-placeholder); opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

@@ -1,0 +1,12 @@
+node_modules/
+client/node_modules/
+client/dist/
+.env
+.env.*
+!.env.example
+npm-debug.log*
+*.log
+.DS_Store
+
+# Database dumps may contain account data; keep them local.
+backups/
