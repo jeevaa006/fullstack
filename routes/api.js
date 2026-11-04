@@ -9,6 +9,7 @@ const Hospital = require('../models/hospital');
 const MedicineReminder = require('../models/medicineReminder');
 const { XMLParser, XMLValidator } = require('fast-xml-parser');
 const { nearbyFacilities, medicalNews, recentResearch } = require('../services/healthData');
+const { connectToDatabase, describeDatabaseError } = require('../lib/database');
 
 const router = express.Router();
 // Authentication limits stay active in normal environments; the integration suite creates many
@@ -74,14 +75,24 @@ const getPage = (query) => ({ page: Math.max(1, Math.min(100000, Number.parseInt
 const appointmentPopulate = [{ path: 'patient', select: 'name email phone' }, { path: 'doctor', select: 'name email phone' }];
 
 router.get('/health', (_req, res) => res.json({ status: 'ok' }));
+// The health check opens the cached connection itself, so it reflects the real state of
+// the database from a cold Vercel Function instead of reporting a never-started process.
 router.get('/health/db', async (_req, res) => {
   try {
-    if (mongoose.connection.readyState !== 1) return res.status(503).json({ status: 'unavailable', database: 'disconnected' });
-    const result = await mongoose.connection.db.admin().ping();
-    if (result.ok !== 1) return res.status(503).json({ status: 'unavailable', database: 'unavailable' });
+    await connectToDatabase();
+    const admin = mongoose.connection.db && mongoose.connection.db.admin();
+    if (!admin) throw new Error('The MongoDB connection has no database handle.');
+    const result = await admin.ping();
+    if (!result || result.ok !== 1) throw new Error('MongoDB ping did not return ok: 1.');
     return res.json({ status: 'ok', database: 'connected' });
-  } catch (_error) {
-    return res.status(503).json({ status: 'unavailable', database: 'unavailable' });
+  } catch (error) {
+    // Connection failures are already logged (redacted, rate-limited) by lib/database.js;
+    // log here only when the connection was up and the ping itself failed, or when the
+    // URI is missing entirely.
+    if (mongoose.connection.readyState === 1 || error.code === 'DATABASE_CONFIGURATION_ERROR') {
+      console.error(`MongoDB health check failed (${describeDatabaseError(error)}).`);
+    }
+    return res.status(503).json({ status: 'unavailable', database: 'disconnected' });
   }
 });
 

@@ -6,7 +6,7 @@ const helmet = require('helmet');
 const cors = require('cors');
 const path = require('path');
 const routes = require('./routes/api');
-const { connectToDatabase } = require('./lib/database');
+const { connectToDatabase, describeDatabaseError } = require('./lib/database');
 
 const app = express();
 const normalizeOrigin = (origin) => {
@@ -43,10 +43,26 @@ app.use((req, res, next) => cors({ origin(origin, callback) {
 }, credentials: true })(req, res, next));
 app.use(express.json({ limit: '32kb' }));
 app.use(cookieParser());
-app.use('/api', (req, res, next) => {
-  if (req.path === '/health' || req.path === '/health/db' || req.path === '/v1/auth/logout' || req.path.startsWith('/v1/health-information/') || req.path.startsWith('/v1/news/') || req.path.startsWith('/v1/research') || req.path.startsWith('/v1/hospitals/nearby')) return next();
-  if (req.path.startsWith('/v1') && mongoose.connection.readyState !== 1) return res.status(503).json({ error: 'The database is currently unavailable. Please try again later.' });
-  next();
+// Routes that never touch MongoDB. Everything else under /v1 waits for the cached
+// connection, which is what makes the Express app usable as a Vercel Function: the
+// function never runs start(), so the request path must open the connection itself.
+const databaseFreeRoute = (requestPath) => requestPath === '/health'
+  || requestPath === '/health/db'
+  || requestPath === '/v1/auth/logout'
+  || requestPath.startsWith('/v1/health-information/')
+  || requestPath.startsWith('/v1/news/')
+  || requestPath.startsWith('/v1/research')
+  || requestPath.startsWith('/v1/hospitals/nearby');
+app.use('/api', async (req, res, next) => {
+  if (!req.path.startsWith('/v1') || databaseFreeRoute(req.path)) return next();
+  try {
+    await connectToDatabase();
+    return next();
+  } catch (_error) {
+    // lib/database.js logs one redacted line per failure window; the client only
+    // learns that the database is unavailable.
+    return res.status(503).json({ error: 'The database is currently unavailable. Please try again later.' });
+  }
 });
 app.use('/api', routes);
 app.use('/api', (_req, res) => res.status(404).json({ error: 'API endpoint not found.' }));
@@ -67,7 +83,7 @@ app.use((err, _req, res, _next) => {
 async function start() {
   if (process.env.NODE_ENV !== 'test') {
     await connectToDatabase().catch((error) => {
-      console.error(`MongoDB unavailable (${error.code || error.name || 'connection error'}); database-backed requests will return HTTP 503.`);
+      console.error(`MongoDB unavailable at startup (${describeDatabaseError(error)}); database-backed requests will return HTTP 503 until a request retries the connection.`);
     });
   }
   const port = Number(process.env.PORT) || 5000;
@@ -88,6 +104,7 @@ if (require.main === module) start();
 
 // Export the Express application itself so Vercel's Express service entrypoint finds a
 // handler, and keep the named export used by the integration tests and Node hosts that
-// import { app }.
+// import { app }. Vercel imports this module instead of running it, so nothing here may
+// depend on require.main === module to prepare the database.
 module.exports = app;
 module.exports.app = app;

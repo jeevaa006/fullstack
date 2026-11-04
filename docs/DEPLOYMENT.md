@@ -15,10 +15,16 @@ CDN. No long-running Express process is required.
 | API | The Express service (`index.js`) mounts every route from `routes/api.js` under `/api` |
 | API routing | `vercel.json` rewrites `/api/*` to the Express service, which receives the original `/api/...` path |
 | Deep links | every other path rewrites to the Vite service, whose SPA fallback serves `index.html`, so `/patient`, `/doctors/:id` and refreshes work |
-| Database | cached Mongoose connection in `lib/database.js`, reused across invocations |
+| Database | cached Mongoose connection in `lib/database.js`, opened lazily by the first database-backed request and reused across warm invocations |
 
 There is no `api/` functions directory. When `services` is present Vercel ignores `api/`, so the
 Express service is the single API entry point and `/api/*` must keep rewriting to it.
+
+Vercel imports `index.js`; it never runs it as a script, so `start()` (the local listener and its
+startup connection) does not execute in production. Middleware in `index.js` therefore connects
+lazily on the first `/api/v1` request and `/api/health/db` connects and pings on demand. Removing
+that lazy connect leaves the function permanently at `readyState 0`, which surfaces as
+`database: disconnected` and the 503 "database is currently unavailable" login error.
 
 `GET /api/health` stays available even when MongoDB is unreachable. Database-backed endpoints
 return HTTP 503 with a JSON error instead of crashing the function.
