@@ -12,10 +12,14 @@
       "root": "client",
       "framework": "vite",
       "buildCommand": "npm install && npm run build",
-      "installCommand": "npm install"
+      "installCommand": "npm install",
+      "rewrites": [
+        { "source": "/(.*)", "destination": "/index.html" }
+      ]
     }
   },
   "rewrites": [
+    { "source": "/api", "destination": { "service": "app" } },
     { "source": "/api/(.*)", "destination": { "service": "app" } },
     { "source": "/(.*)", "destination": { "service": "client" } }
   ]

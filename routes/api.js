@@ -10,6 +10,9 @@ const MedicineReminder = require('../models/medicineReminder');
 const { XMLParser, XMLValidator } = require('fast-xml-parser');
 const { nearbyFacilities, medicalNews, recentResearch } = require('../services/healthData');
 const { connectToDatabase, describeDatabaseError } = require('../lib/database');
+const { buildAnalytics, buildLiveAnalytics } = require('../lib/analytics');
+const { touchPresence } = require('../lib/presence');
+const { recordActivity } = require('../lib/activity');
 
 const router = express.Router();
 // Authentication limits stay active in normal environments; the integration suite creates many
@@ -17,6 +20,7 @@ const router = express.Router();
 const authLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false, skip: () => process.env.NODE_ENV === 'test' });
 const informationLimit = rateLimit({ windowMs: 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false });
 const externalDataLimit = rateLimit({ windowMs: 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false });
+const analyticsLimit = rateLimit({ windowMs: 60 * 1000, limit: 40, standardHeaders: true, legacyHeaders: false });
 const healthTopicCache = new Map();
 const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', processEntities: false, trimValues: true, htmlEntities: false });
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -61,6 +65,8 @@ async function authenticate(req, res, next) {
     const user = await User.findById(payload.sub);
     if (!user || user.status !== 'active') return fail(res, 401, 'This account is unavailable.');
     req.user = user;
+    // Real presence for the admin live view: no write more than once a minute per user.
+    touchPresence(user);
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') return fail(res, 401, 'Your session is invalid or expired. Please sign in again.');
@@ -287,11 +293,16 @@ router.post('/v1/auth/login', authLimit, async (req, res, next) => {
     if (!user || !(await user.comparePassword(password))) return fail(res, 401, 'Email or password is incorrect.');
     if (user.status !== 'active') return fail(res, 403, 'This account has been deactivated.');
     issueCookie(res, user);
+    touchPresence(user);
+    recordActivity({ type: 'login', actor: user, summary: `${user.name} (${user.role}) signed in`, targetType: 'session' });
     res.json({ user: safeUser(user) });
   } catch (error) { next(error); }
 });
 router.post('/v1/auth/logout', (_req, res) => res.clearCookie('carebridge_token', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/' }).json({ message: 'Signed out.' }));
 router.get('/v1/auth/me', ...auth(), async (req, res) => res.json({ user: safeUser(req.user) }));
+// Signed-in tabs call this on a timer; authenticate() records the presence write, so
+// the response only confirms that the session is still valid.
+router.post('/v1/presence/heartbeat', ...auth(), (req, res) => res.json({ status: 'ok', recordedAt: new Date().toISOString(), lastActiveAt: req.user.lastActiveAt || null }));
 router.patch('/v1/auth/profile', ...auth(), async (req, res, next) => {
   try {
     const updates = {};
@@ -481,12 +492,12 @@ router.get('/v1/hospitals/:id', async (req, res, next) => {
 });
 router.get('/v1/admin/hospitals', ...auth('admin'), async (_req, res, next) => { try { res.json({ hospitals: await Hospital.find().sort({ name: 1 }) }); } catch (error) { next(error); } });
 router.post('/v1/admin/hospitals', ...auth('admin'), async (req, res, next) => {
-  try { const { name, address, district } = req.body; if (!validBody(req.body, ['name', 'address', 'district'])) return fail(res, 400, 'Name, address and district are required.'); const coordinates = req.body.coordinates; if (coordinates !== undefined && (!Array.isArray(coordinates) || coordinates.length !== 2 || !coordinates.every(Number.isFinite) || Math.abs(coordinates[0]) > 180 || Math.abs(coordinates[1]) > 90)) return fail(res, 400, 'Coordinates must be [longitude, latitude] within valid bounds.'); const hospital = await Hospital.create({ name, address, district, contact: req.body.contact || '', services: Array.isArray(req.body.services) ? req.body.services.slice(0, 30).map((s) => String(s).slice(0, 80)) : [], ...(coordinates ? { coordinates: { type: 'Point', coordinates } } : {}), source: typeof req.body.source === 'string' ? req.body.source.slice(0, 160) : 'CareBridge administrator', sourceUpdatedAt: req.body.sourceUpdatedAt ? new Date(req.body.sourceUpdatedAt) : undefined, published: req.body.published === true }); res.status(201).json({ hospital }); } catch (error) { next(error); }
+  try { const { name, address, district } = req.body; if (!validBody(req.body, ['name', 'address', 'district'])) return fail(res, 400, 'Name, address and district are required.'); const coordinates = req.body.coordinates; if (coordinates !== undefined && (!Array.isArray(coordinates) || coordinates.length !== 2 || !coordinates.every(Number.isFinite) || Math.abs(coordinates[0]) > 180 || Math.abs(coordinates[1]) > 90)) return fail(res, 400, 'Coordinates must be [longitude, latitude] within valid bounds.'); const hospital = await Hospital.create({ name, address, district, contact: req.body.contact || '', services: Array.isArray(req.body.services) ? req.body.services.slice(0, 30).map((s) => String(s).slice(0, 80)) : [], ...(coordinates ? { coordinates: { type: 'Point', coordinates } } : {}), source: typeof req.body.source === 'string' ? req.body.source.slice(0, 160) : 'CareBridge administrator', sourceUpdatedAt: req.body.sourceUpdatedAt ? new Date(req.body.sourceUpdatedAt) : undefined, published: req.body.published === true }); recordActivity({ type: 'admin.hospital.created', actor: req.user, summary: `Added hospital ${hospital.name} (${hospital.district})`, targetType: 'hospital', targetId: hospital._id }); res.status(201).json({ hospital }); } catch (error) { next(error); }
 });
 router.patch('/v1/admin/hospitals/:id', ...auth('admin'), async (req, res, next) => {
-  try { if (!validId(req.params.id)) return fail(res, 400, 'Invalid hospital ID.'); const updates = {}; for (const key of ['name', 'address', 'district', 'contact', 'published', 'source', 'sourceUpdatedAt']) if (req.body[key] !== undefined) updates[key] = req.body[key]; if (req.body.sourceUpdatedAt !== undefined) updates.sourceUpdatedAt = new Date(req.body.sourceUpdatedAt); if (req.body.services !== undefined) updates.services = Array.isArray(req.body.services) ? req.body.services.slice(0, 30) : []; if (req.body.coordinates !== undefined) { const coordinates = req.body.coordinates; if (coordinates === null) updates.coordinates = undefined; else if (!Array.isArray(coordinates) || coordinates.length !== 2 || !coordinates.every(Number.isFinite) || Math.abs(coordinates[0]) > 180 || Math.abs(coordinates[1]) > 90) return fail(res, 400, 'Coordinates must be [longitude, latitude] within valid bounds.'); else updates.coordinates = { type: 'Point', coordinates }; } const hospital = await Hospital.findByIdAndUpdate(req.params.id, { $set: updates }, { new: true, runValidators: true }); if (!hospital) return fail(res, 404, 'Hospital not found.'); res.json({ hospital }); } catch (error) { next(error); }
+  try { if (!validId(req.params.id)) return fail(res, 400, 'Invalid hospital ID.'); const updates = {}; for (const key of ['name', 'address', 'district', 'contact', 'published', 'source', 'sourceUpdatedAt']) if (req.body[key] !== undefined) updates[key] = req.body[key]; if (req.body.sourceUpdatedAt !== undefined) updates.sourceUpdatedAt = new Date(req.body.sourceUpdatedAt); if (req.body.services !== undefined) updates.services = Array.isArray(req.body.services) ? req.body.services.slice(0, 30) : []; if (req.body.coordinates !== undefined) { const coordinates = req.body.coordinates; if (coordinates === null) updates.coordinates = undefined; else if (!Array.isArray(coordinates) || coordinates.length !== 2 || !coordinates.every(Number.isFinite) || Math.abs(coordinates[0]) > 180 || Math.abs(coordinates[1]) > 90) return fail(res, 400, 'Coordinates must be [longitude, latitude] within valid bounds.'); else updates.coordinates = { type: 'Point', coordinates }; } const hospital = await Hospital.findByIdAndUpdate(req.params.id, { $set: updates }, { new: true, runValidators: true }); if (!hospital) return fail(res, 404, 'Hospital not found.'); recordActivity({ type: 'admin.hospital.updated', actor: req.user, summary: `Updated hospital ${hospital.name}`, targetType: 'hospital', targetId: hospital._id }); res.json({ hospital }); } catch (error) { next(error); }
 });
-router.delete('/v1/admin/hospitals/:id', ...auth('admin'), async (req, res, next) => { try { if (!validId(req.params.id)) return fail(res, 400, 'Invalid hospital ID.'); const hospital = await Hospital.findByIdAndDelete(req.params.id); if (!hospital) return fail(res, 404, 'Hospital not found.'); res.json({ message: 'Hospital removed.' }); } catch (error) { next(error); } });
+router.delete('/v1/admin/hospitals/:id', ...auth('admin'), async (req, res, next) => { try { if (!validId(req.params.id)) return fail(res, 400, 'Invalid hospital ID.'); const hospital = await Hospital.findByIdAndDelete(req.params.id); if (!hospital) return fail(res, 404, 'Hospital not found.'); recordActivity({ type: 'admin.hospital.deleted', actor: req.user, summary: `Removed hospital ${hospital.name}`, targetType: 'hospital', targetId: hospital._id }); res.json({ message: 'Hospital removed.' }); } catch (error) { next(error); } });
 
 router.get('/v1/reminders', ...auth('patient'), async (req, res, next) => { try { res.json({ reminders: await MedicineReminder.find({ patient: req.user._id }).sort({ startDate: 1, reminderTime: 1 }) }); } catch (error) { next(error); } });
 router.post('/v1/reminders', ...auth('patient'), async (req, res, next) => {
@@ -500,17 +511,25 @@ router.delete('/v1/reminders/:id', ...auth('patient'), async (req, res, next) =>
 router.get('/v1/admin/stats', ...auth('admin'), async (_req, res, next) => {
   try { const [patients, doctors, approvedDoctors, pendingDoctors, appointments, pendingAppointments, confirmedAppointments, cancelledAppointments, hospitals] = await Promise.all([User.countDocuments({ role: 'patient' }), User.countDocuments({ role: 'doctor' }), DoctorProfile.countDocuments({ verificationStatus: 'approved' }), DoctorProfile.countDocuments({ verificationStatus: 'pending' }), Appointment.countDocuments(), Appointment.countDocuments({ status: 'Pending' }), Appointment.countDocuments({ status: 'Confirmed' }), Appointment.countDocuments({ status: 'Cancelled' }), Hospital.countDocuments()]); res.json({ patients, doctors, approvedDoctors, pendingDoctors, appointments, pendingAppointments, confirmedAppointments, cancelledAppointments, hospitals }); } catch (error) { next(error); }
 });
+// Power BI-style analytics. Every figure is aggregated from stored records; /live is a
+// small polling endpoint so the online panel can refresh without reloading the page.
+router.get('/v1/admin/analytics/live', analyticsLimit, ...auth('admin'), async (_req, res, next) => {
+  try { res.json(await buildLiveAnalytics()); } catch (error) { next(error); }
+});
+router.get('/v1/admin/analytics', analyticsLimit, ...auth('admin'), async (req, res, next) => {
+  try { res.json(await buildAnalytics(req.query)); } catch (error) { next(error); }
+});
 router.get('/v1/admin/users', ...auth('admin'), async (req, res, next) => {
   try { const { page, limit } = getPage(req.query); const filter = {}; if (['patient', 'doctor', 'admin'].includes(req.query.role)) filter.role = req.query.role; if (['active', 'inactive'].includes(req.query.status)) filter.status = req.query.status; if (req.query.q) filter.$or = ['name', 'email'].map((field) => ({ [field]: { $regex: regex(req.query.q), $options: 'i' } })); const [users, total] = await Promise.all([User.find(filter).select('-password').sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit), User.countDocuments(filter)]); res.json({ users, pagination: { page, limit, total, pages: Math.ceil(total / limit) } }); } catch (error) { next(error); }
 });
 router.patch('/v1/admin/users/:id/status', ...auth('admin'), async (req, res, next) => {
-  try { if (!validId(req.params.id) || !['active', 'inactive'].includes(req.body.status)) return fail(res, 400, 'Valid user ID and status are required.'); if (req.params.id === req.user._id.toString() && req.body.status === 'inactive') return fail(res, 400, 'You cannot deactivate your own account.'); const user = await User.findByIdAndUpdate(req.params.id, { $set: { status: req.body.status } }, { new: true }); if (!user) return fail(res, 404, 'User not found.'); res.json({ user: safeUser(user) }); } catch (error) { next(error); }
+  try { if (!validId(req.params.id) || !['active', 'inactive'].includes(req.body.status)) return fail(res, 400, 'Valid user ID and status are required.'); if (req.params.id === req.user._id.toString() && req.body.status === 'inactive') return fail(res, 400, 'You cannot deactivate your own account.'); const user = await User.findByIdAndUpdate(req.params.id, { $set: { status: req.body.status } }, { new: true }); if (!user) return fail(res, 404, 'User not found.'); recordActivity({ type: 'admin.user.status', actor: req.user, summary: `${req.body.status === 'active' ? 'Reactivated' : 'Deactivated'} ${user.name} (${user.role})`, targetType: 'user', targetId: user._id }); res.json({ user: safeUser(user) }); } catch (error) { next(error); }
 });
 router.get('/v1/admin/doctors', ...auth('admin'), async (req, res, next) => {
   try { const status = ['pending', 'approved', 'rejected'].includes(req.query.status) ? req.query.status : 'pending'; const profiles = await DoctorProfile.find({ verificationStatus: status }).populate('user', 'name email phone status').sort({ createdAt: 1 }); res.json({ doctors: profiles }); } catch (error) { next(error); }
 });
 router.patch('/v1/admin/doctors/:id/verification', ...auth('admin'), async (req, res, next) => {
-  try { if (!validId(req.params.id) || !['approved', 'rejected'].includes(req.body.status)) return fail(res, 400, 'Choose approved or rejected verification status.'); const profile = await DoctorProfile.findOneAndUpdate({ user: req.params.id }, { $set: { verificationStatus: req.body.status } }, { new: true }).populate('user', 'name email'); if (!profile) return fail(res, 404, 'Doctor profile not found.'); res.json({ profile }); } catch (error) { next(error); }
+  try { if (!validId(req.params.id) || !['approved', 'rejected'].includes(req.body.status)) return fail(res, 400, 'Choose approved or rejected verification status.'); const profile = await DoctorProfile.findOneAndUpdate({ user: req.params.id }, { $set: { verificationStatus: req.body.status } }, { new: true }).populate('user', 'name email'); if (!profile) return fail(res, 404, 'Doctor profile not found.'); recordActivity({ type: 'admin.doctor.verification', actor: req.user, summary: `${req.body.status === 'approved' ? 'Approved' : 'Rejected'} doctor profile for ${profile.user?.name || 'a doctor'}`, targetType: 'doctorProfile', targetId: profile._id }); res.json({ profile }); } catch (error) { next(error); }
 });
 router.get('/v1/admin/appointments', ...auth('admin'), async (req, res, next) => {
   try { const { page, limit } = getPage(req.query); const filter = {}; if (req.query.status) filter.status = req.query.status; const [appointments, total] = await Promise.all([Appointment.find(filter).populate(appointmentPopulate).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit), Appointment.countDocuments(filter)]); res.json({ appointments, pagination: { page, limit, total, pages: Math.ceil(total / limit) } }); } catch (error) { next(error); }

@@ -14,7 +14,7 @@ CDN. No long-running Express process is required.
 | Output | `client/dist`, served by the Vite service |
 | API | The Express service (`index.js`) mounts every route from `routes/api.js` under `/api` |
 | API routing | `vercel.json` rewrites `/api/*` to the Express service, which receives the original `/api/...` path |
-| Deep links | every other path rewrites to the Vite service, whose SPA fallback serves `index.html`, so `/patient`, `/doctors/:id` and refreshes work |
+| Deep links | every other path rewrites to the Vite service, which rewrites its own unmatched paths to `index.html` (`client` service `rewrites`), so `/login`, `/patient`, `/doctors/:id` and refreshes work |
 | Database | cached Mongoose connection in `lib/database.js`, opened lazily by the first database-backed request and reused across warm invocations |
 
 There is no `api/` functions directory. When `services` is present Vercel ignores `api/`, so the
@@ -111,6 +111,7 @@ variable.
 2. Set the environment variables above for Preview and Production.
 3. Deploy a preview, then verify:
    - `/` redirects to `/login` when signed out.
+   - `/login` loads on a hard refresh and shows the sign-in form.
    - `/patient` loads directly (SPA deep link).
    - `/api/health` returns `{"status":"ok"}`.
    - `/api/health/db` returns `{"status":"ok","database":"connected"}`.

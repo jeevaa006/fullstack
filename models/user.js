@@ -8,6 +8,9 @@ const UserSchema = new mongoose.Schema({
   role: { type: String, enum: ['patient', 'doctor', 'admin'], default: 'patient', immutable: true },
   phone: { type: String, trim: true, maxlength: 25, default: '' },
   status: { type: String, enum: ['active', 'inactive'], default: 'active' },
+  // Last authenticated request or heartbeat; live analytics counts a user as online
+  // only while this is inside the presence window. Never exposed by the public API.
+  lastActiveAt: { type: Date, default: null, index: true },
 }, { timestamps: true });
 
 UserSchema.pre('save', async function hashPassword() {
